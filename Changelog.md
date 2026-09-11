@@ -1,5 +1,8 @@
 # Changelog
 
+## [V2.1.1] - 11.09-2026
+- Add restart Modal on Zigbee-Settings change.
+
 ## [V2.1.0] - 11-12-2025
 - Fixed project versioning: the last release should have been a minor update, not a patch.
 - The power LED now remains permanently on in router mode. 
