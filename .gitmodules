@@ -5,3 +5,6 @@
 [submodule "lib/ESPAsyncTCP"]
 	path = lib/ESPAsyncTCP
 	url = https://github.com/me-no-dev/ESPAsyncTCP
+[submodule "lib/CzcPeerTls/mbedtls"]
+	path = lib/CzcPeerTls/mbedtls
+	url = https://github.com/Mbed-TLS/mbedtls.git

@@ -28,6 +28,9 @@ https://github.com/xyzroe/XZG/assets/6440415/ae312626-f1d9-41c4-b982-11a1f9ba9ed
 
 Visit [Wiki page](https://xzg.xyzroe.cc/quick-start/) to get information 
 
+[Optional Master/Satellite packet forwarding over IP](docs/backhaul.md)
+includes configuration, radio requirements, builds and acceptance tests.
+
 ## 🚀 Installation
 
 For a quick setup, use [XZG Web Flasher](https://xzg.xyzroe.cc/install) for an easy plug-and-flash experience.

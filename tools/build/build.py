@@ -9,6 +9,7 @@ import os
 import time
 from glob import glob
 import sys
+import re
 
 sys.path.append("./tools")
 from func import print_logo
@@ -19,8 +20,18 @@ VERSION_HEADER = "version.h"
 
 def get_last_git_tag():
     command = ['git', 'describe', '--exact-match', '--tags']
-    tmp = subprocess.check_output(command)
-    return tmp[1:-1]
+    try:
+        result = subprocess.run(command, capture_output=True, text=True)
+    except FileNotFoundError:
+        result = None
+    if result is not None and result.returncode == 0:
+        return result.stdout.strip().removeprefix('V')
+    # Feature branches have no release tag; use the existing source version.
+    with open('src/version.h', encoding='utf-8') as source:
+        version = re.search(r'#define\s+VERSION\s+"([^"]+)"', source.read())
+    if not version:
+        raise RuntimeError('Missing firmware version')
+    return version.group(1).removeprefix('V')
 
 def after_build(source, target, env):
     time.sleep(2)
@@ -32,11 +43,12 @@ def after_build(source, target, env):
         "python tools/build/merge_bin_esp.py --output_folder ./bin --output_name XZG.full.bin --bin_path bin/bootloader_dio_40m.bin bin/firmware.bin bin/partitions.bin --bin_address 0x1000 0x10000 0x8000",
         shell=True,
     )
+    if exit_code:
+        raise RuntimeError('Firmware image merge failed')
 
     VERSION_FILE = "src/" + VERSION_HEADER
     
     VERSION_NUMBER = get_last_git_tag()
-    VERSION_NUMBER = str(VERSION_NUMBER, "utf-8")   # Version Number --> String | VN = b"V2..." type Byte
 
     NEW_NAME_BASE = "bin/czc_fw_" + VERSION_NUMBER
     build_env = env['PIOENV']
@@ -61,4 +73,3 @@ def after_build(source, target, env):
 env.AddPostAction("buildprog", after_build)
 
 firmware_source = os.path.join(env.subst("$BUILD_DIR"), "firmware.bin")
-

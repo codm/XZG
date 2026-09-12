@@ -19,6 +19,8 @@
 // #define ASYNC_TCP_SSL_ENABLED 1
 
 #include "config.h"
+#include "czc_backhaul.h"
+#include "network_status.h"
 #include "esp_eth_mac.h"
 #include "web.h"
 #include "log.h"
@@ -250,6 +252,7 @@ void NetworkEvent(WiFiEvent_t event)
     break;
   case ARDUINO_EVENT_ETH_CONNECTED: // 20: // SYSTEM_EVENT_ETH_CONNECTED:
     LOGD("%s Connected", ethKey);
+    ETH.enableIpV6();
     break;
   case ARDUINO_EVENT_ETH_GOT_IP: // 22: // SYSTEM_EVENT_ETH_GOT_IP:
     // startServers();
@@ -283,6 +286,12 @@ void NetworkEvent(WiFiEvent_t event)
     {
       tmrNetworkOverseer.start();
     }
+    break;
+  case ARDUINO_EVENT_WIFI_STA_CONNECTED:
+    // Start Wi-Fi IPv6 later, after IPv4 is stable; leave SDK DNS policy alone.
+    break;
+  case ARDUINO_EVENT_WIFI_AP_START:
+    WiFi.softAPenableIpV6();
     break;
   case ARDUINO_EVENT_WIFI_STA_GOT_IP: // SYSTEM_EVENT_STA_GOT_IP:
     // startServers();
@@ -414,15 +423,22 @@ void connectWifi()
 
     WiFi.setSleep(false);
 
+    bool addressConfigured;
     if (!networkCfg.wifiDhcp)
     {
-      WiFi.config(networkCfg.wifiIp, networkCfg.wifiGate, networkCfg.wifiMask, networkCfg.wifiDns1, networkCfg.wifiDns2);
+      addressConfigured=WiFi.config(networkCfg.wifiIp, networkCfg.wifiGate, networkCfg.wifiMask, networkCfg.wifiDns1, networkCfg.wifiDns2);
       LOGD("WiFi.config");
     }
     else
     {
-      WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE, INADDR_NONE);
+      // This SDK starts DHCP only for local_ip == 0. INADDR_NONE is the
+      // broadcast address and would instead stop DHCP and set a static IP.
+      addressConfigured=WiFi.config(IPAddress(0U), IPAddress(0U), IPAddress(0U));
       LOGD("Try DHCP");
+    }
+    if (!addressConfigured) {
+      printLogMsg("[WiFi] IPv4 configuration failed");
+      return;
     }
     WiFi.setScanMethod(WIFI_ALL_CHANNEL_SCAN);
     WiFi.setSortMethod(WIFI_CONNECT_AP_BY_SIGNAL);
@@ -531,7 +547,7 @@ void setupCoordinatorMode()
 
   // if (!systemCfg.disableWeb && ((systemCfg.workMode != WORK_MODE_USB) || systemCfg.keepWeb))
   //   updWeb = true; // handle web server
-  if (!systemCfg.disableWeb)
+  if (!systemCfg.disableWeb || backhaulEnabled())
     updWeb = true; // handle web server
   // if (systemCfg.workMode == WORK_MODE_USB && systemCfg.keepWeb)
   //   connectWifi(); // try 2 connect wifi
@@ -547,6 +563,7 @@ void setup()
   loadNetworkConfig (networkCfg);
   loadVpnConfig     (vpnCfg);
   loadMqttConfig    (mqttCfg);
+  backhaulLoad(); // Seed TLS before Wi-Fi initialization and load optional peer settings.
 
   if (!LittleFS.begin(FORMAT_LITTLEFS_IF_FAILED, "/lfs2", 10))
   {
@@ -607,6 +624,7 @@ void setup()
 
   if ((hwConfig.zb.txPin > 0) && (hwConfig.zb.rxPin > 0) && (hwConfig.zb.rstPin > 0) && (hwConfig.zb.bslPin > 0))
   {
+    if (backhaulEnabled()) Serial2.setRxBufferSize(4096);
     Serial2.begin(systemCfg.serialSpeed, SERIAL_8N1, hwConfig.zb.rxPin, hwConfig.zb.txPin); // start zigbee serial
     int BSL_PIN_MODE = 0;
     if (CCTool.begin(hwConfig.zb.rstPin, hwConfig.zb.bslPin, BSL_PIN_MODE))
@@ -634,7 +652,9 @@ void setup()
 
   vars.connectedClients = 0;
 
-  xTaskCreate(updateWebTask, "update Web Task", 2048, NULL, 8, NULL);
+  // Live page values must not preempt the UI, peer transport or UART workers.
+  if(xTaskCreate(updateWebTask, "update Web Task", 2048, NULL, 1, NULL)!=pdPASS)
+    printLogMsg("[WEB] Live updates unavailable: cannot create task");
 
   printNVSFreeSpace();
 
@@ -663,6 +683,7 @@ void setup()
 
   setup1wire(check1wire());
 
+  backhaulBegin(); // All stock boot-time CCTools probes have finished.
   LOGI("done");
 }
 
@@ -700,9 +721,20 @@ void socketClientDisconnected(int client)
   }
 }
 
+// Called by the web radio flasher after validation, before entering BSL.
+// Drop the old controller sessions so buffered ZNP commands cannot survive a flash.
+void socketClientsDisconnect()
+{
+  for (byte i = 0; i < MAX_SOCKET_CLIENTS; ++i)
+  {
+    if (client[i]) client[i].stop();
+    socketClientDisconnected(i);
+  }
+}
+
 void printRecvSocket(size_t bytes_read, uint8_t net_buf[BUFFER_SIZE])
 {
-  char output_sprintf[2];
+  char output_sprintf[3]; // two hex digits plus the terminating NUL
   if (bytes_read > 0)
   {
     String tmpTime;
@@ -732,7 +764,7 @@ void printRecvSocket(size_t bytes_read, uint8_t net_buf[BUFFER_SIZE])
 
 void printSendSocket(size_t bytes_read, uint8_t serial_buf[BUFFER_SIZE])
 {
-  char output_sprintf[2];
+  char output_sprintf[3]; // two hex digits plus the terminating NUL
   String tmpTime;
   String buff = "";
   unsigned long timeLog = millis();
@@ -765,13 +797,17 @@ void printSendSocket(size_t bytes_read, uint8_t serial_buf[BUFFER_SIZE])
 
 void loop(void)
 {
+  espUpdateLoop();
+  backhaulLoop();
+  updateCheckLoop();
+  networkIpv6Loop();
   if (btnFlag && vars.hwBtnIs)
   {
     buttonLoop();
   }
 
   tmrNetworkOverseer.update();
-  if (updWeb)
+  if (updWeb || backhaulEnabled())
   {
     webServerHandleClient();
   }
@@ -786,7 +822,7 @@ void loop(void)
   if (!vars.zbFlashing)
   {
 
-    if (systemCfg.workMode == WORK_MODE_USB)
+    if (!backhaulEnabled() && systemCfg.workMode == WORK_MODE_USB)
     {
       if (Serial2.available())
       {
@@ -801,7 +837,7 @@ void loop(void)
       return;
     }
 
-    else if (systemCfg.workMode == WORK_MODE_NETWORK)
+    else if (systemCfg.workMode == WORK_MODE_NETWORK && !backhaulEnabled())
     {
       uint16_t net_bytes_read = 0;
       uint8_t net_buf[BUFFER_SIZE];
@@ -848,11 +884,10 @@ void loop(void)
         if (client[cln])
         {
           socketClientConnected(cln, client[cln].remoteIP());
-          while (client[cln].available())
+          while (net_bytes_read < BUFFER_SIZE && client[cln].available())
           { // read from LAN
             net_buf[net_bytes_read] = client[cln].read();
-            if (net_bytes_read < BUFFER_SIZE - 1)
-              net_bytes_read++;
+            net_bytes_read++;
           } // send to Zigbee
           Serial2.write(net_buf, net_bytes_read);
           // print to web console
@@ -867,11 +902,10 @@ void loop(void)
 
       if (Serial2.available())
       {
-        while (Serial2.available())
+        while (serial_bytes_read < BUFFER_SIZE && Serial2.available())
         { // read from Zigbee
           serial_buf[serial_bytes_read] = Serial2.read();
-          if (serial_bytes_read < BUFFER_SIZE - 1)
-            serial_bytes_read++;
+          serial_bytes_read++;
         }
         // send to LAN
         for (byte cln = 0; cln < MAX_SOCKET_CLIENTS; cln++)

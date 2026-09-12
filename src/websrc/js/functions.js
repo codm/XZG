@@ -331,6 +331,7 @@ function loadPage(url) {
 			break;
 		case api.pages.API_PAGE_NETWORK.str:
 			apiGetPage(api.pages.API_PAGE_NETWORK, () => {
+				networkStatusUiInit();
 
 				if ($("#ethEnbl").prop(chck)) {
 					EthEnbl(true);
@@ -381,6 +382,7 @@ function loadPage(url) {
 		case api.pages.API_PAGE_ZIGBEE.str:
 			apiGetPage(api.pages.API_PAGE_ZIGBEE, () => {
 				generateConfig("z2m");
+				backhaulUiInit();
 			});
 			break;
 		case api.pages.API_PAGE_TOOLS.str:
@@ -1232,30 +1234,120 @@ function extractVersionFromReleaseTag(url) {
 	}
 }
 
-function espFlashGitWait(params) {
-	setTimeout(function () {
-		if (typeof params !== 'undefined' && params !== null && typeof params.link !== 'undefined') {
-			let version = extractVersionFromReleaseTag(params.link);
-			$.get(apiLink + api.actions.API_CMD + "&cmd=" + api.commands.CMD_ESP_UPD_URL + "&url=" + params.link, function (data) { });
-			$('#bar').html(i18next.t('md.esp.fu.vgds', { ver: version }));
-		}
-		else {
-			$.get(apiLink + api.actions.API_CMD + "&cmd=" + api.commands.CMD_ESP_UPD_URL, function (data) { });
-			$('#bar').html(i18next.t('md.esp.fu.lgds'));
-		}
-	}, 500);
+// HTTP completion and a new boot identify a successful update. SSE is only
+// progress feedback: its last packet may be lost while the ESP32 restarts.
+var espUpdateCurrent = null;
+function espUpdateActive() { return espUpdateCurrent && espUpdateCurrent.active; }
+function espUpdateReload() { window.location.reload(); }
+function espUpdateFailed(run, reason) {
+	if (espUpdateCurrent !== run || !run.active) return;
+	run.active = false;
+	clearTimeout(run.timer);
+	$('#prg').removeClass('progress-bar-animated');
+	$('#bar').text(i18next.t('md.esp.fu.errors.' + reason, {
+		defaultValue: i18next.t('md.esp.fu.failed')
+	})).css('color', 'red');
+	$('.modal-footer').empty();
+	modalAddCancel();
 }
+function espUpdateProgress(value) {
+	if (!espUpdateActive() || espUpdateCurrent.waiting) return;
+	const percent = Math.min(99, Math.max(0, Number(value)));
+	if (!Number.isFinite(percent)) return;
+	$('#prg').css('width', percent + '%').removeClass('progress-bar-animated');
+	$('#bar').text(i18next.t('md.esp.fu.prgs', {per: percent.toFixed(2)}));
+}
+function espUpdateWait(run, confirmed) {
+	if (espUpdateCurrent !== run || !run.active) return;
+	run.confirmed = run.confirmed || confirmed;
+	if (run.confirmed) {
+		$('#prg').css('width', '100%').removeClass('progress-bar-animated');
+		$('#bar').text(i18next.t('md.esp.fu.ucr')).css('color', 'green');
+	} else {
+		$('#bar').text(i18next.t('md.esp.fu.checking'));
+	}
+	if (run.waiting) return;
+	run.waiting = true;
+	const deadline = Date.now() + 90000;
+	function reload() {
+		if (espUpdateCurrent !== run || !run.active) return;
+		run.active = false;
+		espUpdateReload();
+	}
+	function poll() {
+		if (espUpdateCurrent !== run || !run.active) return;
+		if (Date.now() >= deadline) { espUpdateFailed(run, 'reconnect_timeout'); return; }
+		$.ajax({url: '/api/esp-update', dataType: 'json', cache: false, timeout: 2000})
+		.done(function (status) {
+			if (espUpdateCurrent !== run || !run.active) return;
+			if (!status || typeof status.boot !== 'string' || !status.boot) return;
+			if (status.boot !== run.boot) { reload(); return; }
+			if (status.state === 'failed') { espUpdateFailed(run, status.error); return; }
+			if (status.state === 'restarting') espUpdateWait(run, true);
+		})
+		.fail(function (xhr) {
+			// A stock GitHub image has no backhaul status API. Its HTTP 404
+			// after a confirmed update also proves the old app is gone.
+			if (run.confirmed && xhr.status === 404 && espUpdateCurrent === run && run.active) {
+				$.ajax({url: '/', cache: false, timeout: 2000}).done(reload);
+			}
+		})
+		.always(function () {
+			if (espUpdateCurrent === run && run.active) run.timer = setTimeout(poll, 1500);
+		});
+	}
+	run.timer = setTimeout(poll, 1000);
+}
+function startEspUpdate(params) {
+	if (espUpdateActive()) return;
+	const run = {active: true, boot: null, confirmed: false, waiting: false, timer: null};
+	espUpdateCurrent = run;
+	$('#bar').text(i18next.t('md.esp.fu.wdm'));
+	$.ajax({url: '/api/esp-update', dataType: 'json', cache: false, timeout: 4000})
+	.done(function (status) {
+		if (espUpdateCurrent !== run || !run.active) return;
+		if (!status || typeof status.boot !== 'string' || !status.boot) { espUpdateFailed(run, 'invalid_response'); return; }
+		run.boot = status.boot;
+		if (status.state === 'restarting') { espUpdateWait(run, true); return; }
+		let request;
+		if (params instanceof FormData) {
+			const file = params.get('update');
+			if (!(file instanceof File) || !file.size) { espUpdateFailed(run, 'invalid_size'); return; }
+			request = {url: '/update?size=' + file.size, type: 'POST', data: params,
+				contentType: false, processData: false, dataType: 'json'};
+		} else {
+			const link = params && params.link;
+			request = {url: apiLink + api.actions.API_CMD + '&cmd=' + api.commands.CMD_ESP_UPD_URL +
+				(link ? '&url=' + encodeURIComponent(link) : ''), dataType: 'text'};
+			$('#bar').text(i18next.t(link ? 'md.esp.fu.vgds' : 'md.esp.fu.lgds',
+				{ver: link ? extractVersionFromReleaseTag(link) : ''}));
+		}
+		request.timeout = 180000;
+		$.ajax(request).done(function (result) {
+			const value = typeof result === 'string' ? result.trim() : result && result.result;
+			if (value === 'esp_updated') espUpdateWait(run, true);
+			else espUpdateFailed(run, value || 'invalid_response');
+		}).fail(function (xhr) {
+			if (xhr.status === 0) espUpdateWait(run, false);
+			else espUpdateFailed(run, (xhr.responseJSON || {}).result || 'invalid_response');
+		});
+	})
+	.fail(function () { espUpdateFailed(run, 'status_unavailable'); });
+}
+function espFlashGitWait(params) { startEspUpdate(params); }
 
 let retryCount = 0;
 const maxRetries = 30;
 var sourceEvents;
+var zbFlashLocal = false;
+var zbFlashStage = '';
 
 function connectEvents() {
 	if (window.location.pathname.startsWith('/login')) {
 		return;
 	}
 
-	if (retryCount >= maxRetries) {
+	if (retryCount >= maxRetries && !espUpdateActive()) {
 		alert(i18next.t('c.cerp'));
 		return;
 	}
@@ -1266,13 +1358,12 @@ function connectEvents() {
 	}, false);
 
 	sourceEvents.addEventListener('error', function (e) {
-		if (e.target.readyState != EventSource.OPEN) {
-			retryCount++;
-			setTimeout(function () {
-				sourceEvents.close();
-				connectEvents();//callback);
-			}, 100);
-		}
+		if (e.target !== sourceEvents || e.target.readyState === EventSource.OPEN) return;
+		e.target.close();
+		if (!espUpdateActive()) retryCount++;
+		setTimeout(function () {
+			if (sourceEvents === e.target) connectEvents();
+		}, espUpdateActive() ? 1500 : Math.min(1000 * Math.pow(2, Math.min(retryCount - 1, 4)), 15000));
 	}, false);
 
 	sourceEvents.addEventListener('root_update', function (e) {
@@ -1286,11 +1377,14 @@ function connectEvents() {
 	});
 
 	sourceEvents.addEventListener('zb.dw', function (e) {
+		if (zbFlashLocal) return;
 		$('#zbFlshPgsTxt').html(i18next.t('md.esp.fu.dwnl', { per: e.data }));
 		$("#zbFlshPrgs").css("width", e.data + '%');
 	}, false);
 
 	sourceEvents.addEventListener('zb.fp', function (e) {
+		if (zbFlashLocal && zbFlashStage !== 'upload' && zbFlashStage !== 'flash') return;
+		zbFlashStage = 'flash';
 		$('#zbFlshPgsTxt').html(i18next.t('md.esp.fu.flsh', { per: e.data }));
 		$("#zbFlshPrgs").css("width", e.data + '%');
 	}, false);
@@ -1304,6 +1398,7 @@ function connectEvents() {
 	}, false);
 
 	sourceEvents.addEventListener('zb.fi', function (e) {
+		if (zbFlashLocal && zbFlashStage !== 'upload' && zbFlashStage !== 'flash') return;
 		let data = e.data.replaceAll("`", "<br>");
 
 		if (e.data == "startDownload") {
@@ -1312,6 +1407,7 @@ function connectEvents() {
 		}
 
 		if (e.data == "startFlash") {
+			zbFlashStage = 'flash';
 			data = i18next.t('md.zg.fu.stf');
 		}
 
@@ -1319,15 +1415,12 @@ function connectEvents() {
 			data = i18next.t('md.zg.fu.er');
 		}
 
-		if (e.data == "finishFlash") {
-			data = i18next.t('md.zg.fu.fn');
-			$(".progress").addClass(classHide);
-			$(modalBody).css("color", "green");
-			setTimeout(() => {
-				$(modalBtns).html("");
-				modalAddClose();
+		if (e.data == "verifyFlash") data = i18next.t("md.zg.fu.verify");
 
-			}, 1000);
+		if (e.data == "finishFlash") {
+			// Local uploads finish only after the HTTP handler confirms cleanup.
+			if (!zbFlashLocal) finishZbFlash();
+			return;
 		}
 
 		$("#zbFlshPgsTxt").html(data);
@@ -1335,6 +1428,7 @@ function connectEvents() {
 	}, false);
 
 	sourceEvents.addEventListener('zb.ff', function (e) {
+		if (zbFlashLocal) return;
 		let fileName = fileFromUrl(e.data);
 		if (fileName) {
 			data = i18next.t('md.zg.fu.f', { file: fileName });
@@ -1354,27 +1448,16 @@ function connectEvents() {
 	}, false);
 
 	sourceEvents.addEventListener('zb.fe', function (e) {
-		const data = e.data.replaceAll("`", "<br>");
-		$(modalBtns).html("");
-		$("#zbFlshPgsTxt").html(data);
-		$(".progress").addClass(classHide);
-		$(modalBody).html(e.data).css("color", "red");
-		modalAddClose();
+		if (!zbFlashLocal) failZbFlash(e.data.replaceAll("`", "\n"));
 	}, false);
 
 
 	sourceEvents.addEventListener('esp.fp', function (e) {
-		$('#prg').css('width', e.data + '%');
-		$('#bar').html(i18next.t('md.esp.fu.prgs', { per: e.data }));
-		$("#prg").removeClass("progress-bar-animated");
-
-		if (Math.round(e.data) > 99) {
-			setTimeout(function () {
-				$('#bar').html(i18next.t('md.esp.fu.ucr')).css("color", "green");
-				setTimeout(function () {
-					restartWait();
-				}, 1000);
-			}, 500);
+		espUpdateProgress(e.data);
+	}, false);
+	sourceEvents.addEventListener('esp.fi', function (e) {
+		if (espUpdateActive() && espUpdateCurrent.boot && e.data === 'restarting') {
+			espUpdateWait(espUpdateCurrent, false);
 		}
 	}, false);
 }
@@ -1408,33 +1491,16 @@ function reconnectEvents() {
 	}
 }
 
-// Check if clients are connected and configure corresponding modal
-// modal gets created in HTML 
+// The flasher takes exclusive UART ownership when the user confirms the update.
 function startZbFlash(link, fwMode) {
-	$.get(apiLink + api.actions.API_CMD + "&cmd=" + api.commands.CMD_CLIENT_CHECK, function (connectedClients) {
-		if(connectedClients != 0) {
-			configureClientErrorModal();
-		}
-		else {
-			configureZigBeeFlashModal(link, fwMode);
-		}
-	});
-}
-
-function configureClientErrorModal() {
-	$(modalBtns).html("");
-	$(modalBody).html("");
-	
-	$("<div>", {
-			text: i18next.t("md.zb.ccn"),
-			class: "my-1 text-sm-center text-danger"
-	}).appendTo(modalBody);
-
-	modalAddClose();
+	zbFlashLocal = link instanceof File;
+	zbFlashStage = '';
+	configureZigBeeFlashModal(link, fwMode);
 }
 
 function configureZigBeeFlashModal(link, fwMode) {
-	$.get(apiLink + api.actions.API_CMD + "&cmd=" + api.commands.CMD_DNS_CHECK, function (data) {
+	const localFile = link instanceof File;
+	function configure() {
 		reconnectEvents();
 
 		$(modalBtns).html("");
@@ -1445,11 +1511,12 @@ function configureZigBeeFlashModal(link, fwMode) {
 			class: "my-1 text-sm-center text-danger"
 		}).appendTo(modalBody);
 
-		let fileName = fileFromUrl(link);
+		let fileName = localFile ? link.name : fileFromUrl(link);
 		$("<div>", {
 			text: fileName,
 			class: "my-1 text-sm-center"
 		}).appendTo(modalBody);
+		if (localFile) $('<p>', {text: i18next.t('p.bh.flashNote'), class: 'text-sm-center text-danger'}).appendTo(modalBody);
 
 		modalAddCancel();
 		let flashButton = $('<button>', {
@@ -1459,7 +1526,8 @@ function configureZigBeeFlashModal(link, fwMode) {
 			title: i18next.t("md.esp.fu.wm"),
 			disabled: true,
 			click: function () {
-				$.get(apiLink + api.actions.API_CMD + "&cmd=" + api.commands.CMD_ZB_FLASH + "&url=" + link + "&fwMode=" + fwMode);
+				clearInterval(checkSourceEventsInterval);
+				zbFlashStage = localFile ? 'upload' : 'flash';
 				$(modalBtns).html("");
 				modalAddSpiner();
 				$(modalBody).html("");
@@ -1476,20 +1544,83 @@ function configureZigBeeFlashModal(link, fwMode) {
 						style: "width: 100%; background-color: var(--link-color);"
 					})
 				}).appendTo(modalBody);
+				if (localFile) uploadZigbeeFile(link, fwMode);
+				else $.get(apiLink + api.actions.API_CMD + "&cmd=" + api.commands.CMD_ZB_FLASH + "&url=" + encodeURIComponent(link) + "&fwMode=" + encodeURIComponent(fwMode))
+					.fail(() => failZbFlash(i18next.t('p.bh.flashFailed')));
 			}
 		}).appendTo(modalBtns);
 
 		let checkSourceEventsInterval = setInterval(function () {
-			if (sourceEvents) {
+			if (sourceEvents && sourceEvents.readyState === EventSource.OPEN) {
 				flashButton.prop('disabled', false);
 			} else {
 				flashButton.prop('disabled', true);
 			}
 		}, 100);
 
-		$(modal).on('hidden.bs.modal', function () {
+		$('#modal').one('hidden.bs.modal', function () {
 			clearInterval(checkSourceEventsInterval);
 		});
+	}
+	if (localFile) configure();
+	else $.get(apiLink + api.actions.API_CMD + "&cmd=" + api.commands.CMD_DNS_CHECK, configure)
+		.fail(() => failZbFlash(i18next.t('p.bh.requestFailed')));
+}
+
+function finishZbFlash() {
+	zbFlashStage = 'done';
+	$('#zbFlshPgsTxt').text(i18next.t('md.zg.fu.fn'));
+	$(modalBody).find('.progress').addClass(classHide);
+	$(modalBody).css('color', 'green');
+	$(modalBtns).empty();
+	modalAddClose();
+}
+
+function failZbFlash(message, details) {
+	zbFlashStage = 'error';
+	$(modalBody).text(message).css('color', 'red');
+	if (details) $('<pre>', {class: 'small text-start mt-3', text: JSON.stringify(details, null, 2)}).appendTo(modalBody);
+	console.error('[Zigbee update]', details || message);
+	$(modalBtns).empty();
+	modalAddClose();
+}
+
+function failZbUpload(reply, httpStatus) {
+	const code = reply && typeof reply.result === 'string' && /^[a-z0-9_]{1,64}$/.test(reply.result)
+		? reply.result : httpStatus ? 'invalid_response' : 'network_error';
+	// Only diagnostic fields: never dump the settings response or the PSK.
+	const details = {result: code};
+	if (httpStatus) details.http_status = httpStatus;
+	if (reply) {
+		if (typeof reply.stage === 'string' && /^[a-z_]{1,32}$/.test(reply.stage)) details.stage = reply.stage;
+		for (const key of ['expected_bytes', 'received_bytes', 'stored_bytes', 'written_bytes', 'radio_flash_bytes', 'bsl_status'])
+			if (Number.isFinite(reply[key])) details[key] = reply[key];
+		if (typeof reply.erase_started === 'boolean') details.erase_started = reply.erase_started;
+		if (typeof reply.bsl_error === 'string' && /^[a-z_]{1,64}$/.test(reply.bsl_error)) details.bsl_error = reply.bsl_error;
+	}
+	failZbFlash(i18next.t('md.zg.errors.' + code, {defaultValue: code}), details);
+}
+
+function uploadZigbeeFile(file, fwMode) {
+	const data = new FormData(); data.append('fwMode', fwMode); data.append('radio', file);
+	$.getJSON('/api/backhaul').then(function (config) {
+		return $.ajax({url: '/updateZB', type: 'POST', headers: {'X-Backhaul-Token': config.token},
+			data: data, processData: false, contentType: false, dataType: 'json',
+			xhr: function () {
+				const xhr = new window.XMLHttpRequest();
+				xhr.upload.addEventListener('progress', function (event) {
+					if (!event.lengthComputable || zbFlashStage !== 'upload') return;
+					const percent = Math.round(event.loaded * 100 / event.total);
+					$('#zbFlshPgsTxt').text(i18next.t('md.zg.fu.upload', {per: percent}));
+					$('#zbFlshPrgs').removeClass('progress-bar-animated').css('width', percent + '%');
+				});
+				return xhr;
+			}});
+	}).done(function (reply) {
+		if (reply && reply.result === 'radio_updated') finishZbFlash();
+		else failZbUpload(reply, 200);
+	}).fail(function (xhr) {
+		failZbUpload(xhr.responseJSON, xhr.status);
 	});
 }
 
@@ -1676,16 +1807,12 @@ function modalConstructor(type, params) {
 		case "flashESP":
 			$.get(apiLink + api.actions.API_CMD + "&cmd=" + api.commands.CMD_DNS_CHECK);
 			$(headerText).text(i18next.t('md.esp.fu.tt')).css("color", "red");
-			let action = 0;
 			if (params instanceof FormData) {
-				action = 1
 				$(modalBody).html(i18next.t("md.esp.fu.lfm"));
 			}
 			else if (params && 'link' in params && typeof params.link === 'string' && /^https?:\/\/.*/.test(params.link)) {
-				action = 2;
 				$(modalBody).html(i18next.t("md.esp.fu.gvm", { ver: params.ver }));
 			} else {
-				action = 3
 				$(modalBody).html(i18next.t("md.esp.fu.glm"));
 			}
 			$("<div>", {
@@ -1716,23 +1843,7 @@ function modalConstructor(type, params) {
 							style: "width: 100%; background-color: var(--link-color);"
 						})
 					}).appendTo(modalBody);
-					if (action == 1) {
-						$.ajax({
-							url: "/update",
-							type: "POST",
-							data: params,
-							contentType: false,
-							processData: false,
-							xhr: function () {
-								return new window.XMLHttpRequest();
-							}
-						});
-					}
-					else if (action == 2) {
-						espFlashGitWait(params);
-					} else if (action == 3) {
-						espFlashGitWait();
-					}
+					startEspUpdate(params);
 				}
 			}).appendTo(modalBtns);
 			break;
@@ -2293,8 +2404,9 @@ function sub_esp(t) {
 }
 
 function sub_zb(t) {
-	t = t.value.split("\\\\");
-	"" != t ? $("#updButton_zb").removeAttr("disabled") : $("#updButton_zb").prop(disbl, 1), document.getElementById("file-input_zb").innerHTML = "   " + t[t.length - 1]
+	const file = t.files && t.files[0];
+	$('#updButton_zb').prop(disbl, !file);
+	$('#file-input_zb').text(file ? file.name : i18next.t('p.to.cf'));
 }
 
 async function fetchReleaseData() {
@@ -2377,3 +2489,186 @@ function handleMsg() {
 		document.getElementById("messageTxt").setAttribute("data-i18n", msg_txt);
 	}
 }
+
+function networkStatusUiInit() {
+    const card = document.getElementById('networkStatusCard');
+    if (!card) return;
+    const tr = key => i18next.t('p.ne.live.' + key);
+    let timer, pending = false;
+    function load() {
+        clearTimeout(timer);
+        if (pending || document.getElementById('networkStatusCard') !== card) return;
+        pending = true;
+        $.getJSON('/api/network/status').done(function (data) {
+            if (document.getElementById('networkStatusCard') !== card) return;
+            $('#networkStatusError').addClass('d-none');
+            const rows = $('#networkAddresses').empty();
+            (data.interfaces || []).forEach(function (iface) {
+                const row = $('<tr>').attr('data-interface', iface.id);
+                $('<th>').attr('scope', 'row').text(tr(iface.id)).appendTo(row);
+                $('<td>').text(tr(!iface.enabled ? 'disabled' : iface.connected ? 'connected' : 'disconnected')).appendTo(row);
+                $('<td>').addClass('font-monospace text-break').text(iface.ipv4 || (iface.connected ? tr('waiting') : '—')).appendTo(row);
+                const ipv6 = $('<td>').addClass('text-break').appendTo(row);
+                (iface.ipv6 || []).forEach(function (ip) {
+                    const line = $('<div>').appendTo(ipv6);
+                    $('<span>').addClass('font-monospace').text(ip.address).appendTo(line);
+                    if (ip.link_local) $('<small>').addClass('text-muted').text(' · ' + tr('linkLocal')).appendTo(line);
+                });
+                if (!ipv6.children().length) ipv6.text(iface.connected ? tr('waiting') : '—');
+                rows.append(row);
+            });
+        }).fail(function () {
+            if (document.getElementById('networkStatusCard') !== card) return;
+            $('#networkAddresses').empty();
+            $('#networkStatusError').removeClass('d-none').text(tr('failed'));
+        }).always(function () {
+            pending = false;
+            if (document.getElementById('networkStatusCard') === card) timer = setTimeout(load, 5000);
+        });
+    }
+    $('#networkStatusRefresh').on('click', load);
+    load();
+}
+
+// Master/Satellite configuration on the Role page.
+function backhaulUiInit() {
+    const form = document.getElementById('backhaulConfig');
+    if (!form) return;
+    let token = '';
+    let savedMode = 0;
+    let selectedRole = null, roleSupported = false;
+    let lastDebugState = '';
+    let timer, pending = false, restarting = false;
+    const tr = key => i18next.t('p.bh.' + key);
+    function roleChanged() {
+        const visible = roleSupported && selectedRole === 1;
+        $('#backhaulSection').toggleClass('d-none', !visible);
+        $(form).find('input,select,button').prop('disabled', !visible);
+        return visible;
+    }
+    $('.selectable-card').on('click.backhaul', function () {
+        selectedRole = this.classList.contains('zfs_coordinator') ? 1 : this.classList.contains('zfs_router') ? 2 : 3;
+        roleChanged();
+    });
+    function message(text, error) {
+        $('#bhMessage').removeClass('d-none alert-success alert-danger').addClass(error ? 'alert-danger' : 'alert-success').text(text);
+    }
+    function modeChanged() {
+        const mode = Number($('#bhMode').val());
+        $('#bhFields').toggleClass('d-none', mode === 0);
+        $('#bhHost').prop('required', mode === 2);
+        $('#bhHost').closest('.col-md-6').toggleClass('d-none', mode !== 2);
+        $('#bhJoin').toggleClass('d-none', savedMode !== 2);
+    }
+    function status(data) {
+        const st = data.status || {};
+        const ieeeText = value => {
+            const hex = String(value || '').replace(/^0x/i, '').replace(/:/g, '');
+            return /^[0-9a-f]{16}$/i.test(hex) ? hex.toUpperCase().match(/../g).join(':') : String(value || '');
+        };
+        if (data.debug_mode) {
+            // Only public diagnostics: never log the configuration response containing PSK.
+            const event = {mode: data.mode, fault: st.fault || 'status_unavailable', radio: st.radio_revision || 0,
+                required: st.radio_required || null, peers: st.peers_online || 0};
+            const signature = JSON.stringify(event);
+            if (signature !== lastDebugState) { console.info('[CZC]', event); lastDebugState = signature; }
+        }
+        $('#bhOwn').val(ieeeText(st.own_ieee));
+        $('#bhPeers').empty();
+        if (Number(data.mode) === 0) { $('#bhStatus').text(tr('faults.disabled')); return; }
+        const peers = new Map();
+        (st.peers || []).forEach(peer => {
+            const ieee = ieeeText(peer.ieee);
+            const previous = peers.get(ieee);
+            if (!previous || peer.online || !previous.online) peers.set(ieee, peer);
+        });
+        peers.forEach((peer, ieee) => {
+            const parts = [ieee];
+            if (peer.ip) parts.push(peer.ip);
+            parts.push(peer.online ? tr('connected') : tr('faults.' + peer.fault));
+            $('<li>').text(parts.join(' · ')).appendTo('#bhPeers');
+        });
+        const parts = [];
+        if (st.peer) {
+            parts.push(Number(data.mode) === 1 ? tr('satellitesConnected') + ': ' + (st.peers_online || 1) + '/' + (st.peer_limit || 8) : tr('masterConnected'));
+            if (st.af) parts.push('TLS / IPv' + st.af);
+        } else if (st.fault === 'radio_revision' && st.radio_revision) {
+            parts.push(tr('radioInstalled') + ': ' + st.radio_revision + '; ' + tr('radioRequired') + ': ' + (st.radio_required || '—'));
+        } else if (!st.fault) parts.push(tr('faults.status_unavailable'));
+        else if (['none', 'disabled', 'unconfigured', 'awaiting_peer'].includes(st.fault)) {
+            parts.push(tr(Number(data.mode) === 1 ? 'waitingSatellites' : 'connectingMaster'));
+        } else parts.push(tr('faults.' + st.fault));
+        if (st.join && !['idle', 'joined'].includes(st.join) && st.join !== st.fault) parts.push(tr('joins.' + st.join));
+        $('#bhStatus').text(parts.join(' · '));
+    }
+    function load(fill) {
+        clearTimeout(timer);
+        if (pending || restarting || document.getElementById('backhaulConfig') !== form) return;
+        pending = true;
+        return $.getJSON('/api/backhaul').done(function (data) {
+            if (document.getElementById('backhaulConfig') !== form) return;
+            token = data.token;
+            savedMode = data.mode;
+            roleSupported = data.role_supported === true;
+            if (selectedRole === null) selectedRole = Number(data.radio_role);
+            if (fill) {
+                $('#bhMode').val(data.mode); $('#bhHost').val(data.peer_host);
+                $('#bhPort').val(data.peer_port);
+                $('#bhKey').val(data.psk || '');
+            }
+            modeChanged(); roleChanged(); status(data);
+        }).fail(failure).always(function () {
+            pending = false;
+            if (!restarting && document.getElementById('backhaulConfig') === form) timer = setTimeout(() => load(false), 5000);
+        });
+    }
+    function failure(xhr) {
+        const reason = xhr.responseJSON && xhr.responseJSON.result;
+        message(reason ? tr('errors.' + reason) : tr('requestFailed'), true);
+    }
+    function post(path, data) {
+        return $.ajax({url: path, type: 'POST', contentType: 'application/json', dataType: 'json',
+            headers: {'X-Backhaul-Token': token}, data: JSON.stringify(data || {})}).fail(failure);
+    }
+    $('#bhMode').on('change', modeChanged);
+    $('#bhRefresh').on('click', () => load(false));
+    $('#bhShowKey').on('click', function () { const field = document.getElementById('bhKey'); field.type = field.type === 'password' ? 'text' : 'password'; });
+    $('#bhCopyKey').on('click', function () {
+        const field = document.getElementById('bhKey');
+        if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(field.value).then(() => message(tr('copied'), false)).catch(() => message(tr('copyFailed'), true));
+        else {
+            const old = field.type; field.type = 'text'; field.focus(); field.select();
+            const ok = document.execCommand('copy'); field.type = old;
+            message(tr(ok ? 'copied' : 'copyFailed'), !ok);
+        }
+    });
+    $('#bhGenerateKey').on('click', function () {
+        post('/api/backhaul/key').done(data => { $('#bhKey').val(data.psk); message(tr('generated'), false); });
+    });
+    $('#bhJoin').on('click', function () {
+        $('#bhJoin').prop('disabled', true);
+        post('/api/backhaul/join').done(() => { message(tr('joining'), false); setTimeout(() => load(false), 3000); }).always(() => $('#bhJoin').prop('disabled', false));
+    });
+    $(form).on('submit', function (event) {
+        event.preventDefault();
+        if (!roleChanged()) return;
+        if (!form.reportValidity()) return;
+        const data = {mode: Number($('#bhMode').val()), peer_host: $('#bhHost').val().trim(),
+            psk: $('#bhKey').val().trim(), peer_port: Number($('#bhPort').val())};
+        $('#bhSave').prop('disabled', true);
+        post('/api/backhaul', data).done(() => {
+            restarting = true; clearTimeout(timer);
+            message(tr('saved'), false);
+            setTimeout(() => window.location.reload(), 7000);
+        }).fail(() => $('#bhSave').prop('disabled', false));
+    });
+    load(true);
+}
+
+$(document).on('submit', '#upload_form_zb', function (event) {
+    event.preventDefault();
+    const file = document.getElementById('file_zb').files[0];
+    if (!file) return;
+    modalConstructor('flashZBM');
+    startZbFlash(file, 'coordinator');
+});

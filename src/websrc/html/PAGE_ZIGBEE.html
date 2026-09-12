@@ -109,6 +109,59 @@
                     <span data-i18n="p.zi.fws.tt"></span>
                 </div>
                 <div class='card-body'>
+                    <section id="backhaulSection" class="d-none">
+                    <form id="backhaulConfig" class="mb-4">
+                        <h6 data-i18n="p.bh.title">Encrypted CZC network — up to 8 Satellites</h6>
+                        <p class="alert alert-info" data-i18n="p.bh.description">Extend one Zigbee network over an encrypted IP connection. Zigbee software connects to Master; up to eight Satellites provide remote radio coverage. Use the same PSK on every node.</p>
+                        <div id="bhMessage" class="alert d-none" role="status"></div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="bhMode" data-i18n="p.bh.mode">Pair mode</label>
+                                <select id="bhMode" class="form-select">
+                                    <option value="0" data-i18n="p.bh.off">Ordinary CZC (disabled)</option>
+                                    <option value="1" data-i18n="p.bh.master">Master — coordinator</option>
+                                    <option value="2" data-i18n="p.bh.satellite">Satellite — router</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="bhOwn" data-i18n="p.bh.own">This radio's IEEE</label>
+                                <input id="bhOwn" class="form-control" readonly>
+                            </div>
+                        </div>
+                        <div id="bhFields">
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label for="bhHost" data-i18n="p.bh.host">Master address</label>
+                                    <input id="bhHost" class="form-control" maxlength="127" placeholder="192.0.2.1" aria-describedby="bhHostHelp" autocomplete="off">
+                                    <small id="bhHostHelp" class="text-muted" data-i18n="p.bh.hostHelp">IPv4, IPv6 or hostname.</small>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label for="bhKey" data-i18n="p.bh.key">Shared PSK (64 hexadecimal characters)</label>
+                                <div class="input-group">
+                                    <input id="bhKey" type="password" class="form-control font-monospace" maxlength="64" autocomplete="new-password" spellcheck="false">
+                                    <button id="bhShowKey" type="button" class="btn btn-outline-secondary" data-i18n="p.bh.show">Show / hide</button>
+                                    <button id="bhCopyKey" type="button" class="btn btn-outline-secondary" data-i18n="p.bh.copy">Copy</button>
+                                    <button id="bhGenerateKey" type="button" class="btn btn-outline-secondary" data-i18n="p.bh.generate">Generate</button>
+                                </div>
+                                <small class="text-muted" data-i18n="p.bh.keyHelp">Use the same key on both devices. Generate once and copy to the other device. An empty field keeps the saved key.</small>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-6 mb-3"><label for="bhPort" data-i18n="p.bh.port">Peer TLS port</label><input id="bhPort" type="number" min="1024" max="65535" value="7443" class="form-control" required></div>
+                            </div>
+                            <p class="text-muted"><span data-i18n="p.bh.network">Current IPv4/IPv6 addresses and connection settings are in Network.</span> <a href="/network" data-i18n="p.bh.networkLink">Network</a></p>
+                        </div>
+                        <div class="d-flex flex-wrap gap-2 mb-3">
+                            <button id="bhSave" class="btn btn-outline-primary" type="submit" data-i18n="p.bh.save">Save and restart ESP32</button>
+                            <button id="bhRefresh" class="btn btn-outline-secondary" type="button" data-i18n="p.bh.refresh">Refresh status</button>
+                            <button id="bhJoin" class="btn btn-outline-secondary d-none" type="button" data-i18n="p.bh.joinButton">Join Satellite to Master</button>
+                        </div>
+                        <p id="bhStatus" class="mb-2" role="status"></p>
+                        <ul id="bhPeers" class="small"></ul>
+                    </form>
+                    <hr>
+                    </section>
+
                     <div class='col-sm-12'>
                         <div class="alert alert-danger ap-alert" role="alert" data-i18n="p.zi.fws.alarm">
                         </div>

@@ -403,6 +403,8 @@ class CommandInterface
 {
 protected:
     Stream &_stream;
+    const char *bslError="none";
+    uint8_t bslStatus=0;
 
     struct zbInfoStruct
     {
@@ -557,7 +559,7 @@ protected:
     bool _wait_for_ack(unsigned long timeout);
     byte *_receive_SRSP(unsigned long timeout);
     uint32_t _cmdGetChipId();
-    byte *_cmdGetStatus();
+    bool _cmdGetStatus(uint8_t &status);
     bool _checkLastCmd();
     void _sendAck();
     void _sendNAck();
@@ -566,6 +568,7 @@ protected:
     bool _cmdSendData(byte *data, unsigned int dataSize);
     bool _ping();
     byte *_receivePacket();
+    bool _receivePacket(byte *data,size_t expected,unsigned long timeout=1000);
     void _encodeAddr(unsigned long addr, byte encodedAddr[4]);
     unsigned long _decodeAddr(byte byte0, byte byte1, byte byte2, byte byte3);
     byte _calcChecks(byte cmd, unsigned long addr, unsigned long size);
@@ -581,6 +584,7 @@ class CCTools : public CommandInterface
 
 private:
     int _CC_RST_PIN, _CC_BSL_PIN, _BSL_PIN_MODE;
+    uint32_t flashRemaining=0;
 
 public:
     uint32_t currentAddr = 0x00000000;
@@ -589,7 +593,7 @@ public:
     bool ledState;
     bool bslActive;
 
-    zbInfoStruct chip;
+    zbInfoStruct chip{};
 
     CCTools(Stream &serial) : CommandInterface(serial)
     {
@@ -613,6 +617,9 @@ public:
     bool eraseFlash();
     bool beginFlash(uint32_t startAddr, int totalSize);
     bool processFlash(byte *data, int size);
+    bool verifyFlash(uint32_t startAddr,uint32_t size,uint32_t expectedCrc);
+    const char *lastBslError() const { return bslError; }
+    uint8_t lastBslStatus() const { return bslStatus; }
     bool checkFirmwareVersion();
     bool ledToggle();
     bool nvram_reset(void (*logFunction)(const String&));

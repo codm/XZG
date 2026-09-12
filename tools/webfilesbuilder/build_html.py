@@ -12,7 +12,7 @@ NO_WEB_UPDATE = "tools/.no_web_update"
 sys.path.append("./tools")
     
 def build_html():
-    if not os.path.exists(NO_WEB_UPDATE):
+    if not os.path.exists(NO_WEB_UPDATE) and not os.environ.get("CZC_WEB_PREBUILT"):
 
         print("")
         print("Try to build WEB files")

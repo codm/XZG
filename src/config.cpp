@@ -10,6 +10,7 @@
 #include "config.h"
 #include "etc.h"
 #include "web.h"
+#include "web_refresh.h"
 #include "const/keys.h"
 
 Preferences preferences;
@@ -366,7 +367,7 @@ void loadSystemConfig(SystemConfigStruct &config)
     config.tempOffset = preferences.getInt(tempOffsetKey, 0);
     config.disableLedUSB = preferences.getBool(disableLedUSBKey, false);
     config.disableLedPwr = preferences.getBool(disableLedPwrKey, false);
-    config.refreshLogs = preferences.getInt(refreshLogsKey, 1);
+    config.refreshLogs = webRefreshSeconds(preferences.getInt(refreshLogsKey, 1));
     strlcpy(config.timeZone, preferences.getString(timeZoneKey, NTP_TIME_ZONE).c_str(), sizeof(config.timeZone));
     strlcpy(config.ntpServ1, preferences.getString(ntpServ1Key, NTP_SERV_1).c_str(), sizeof(config.ntpServ1));
     strlcpy(config.ntpServ2, preferences.getString(ntpServ2Key, NTP_SERV_2).c_str(), sizeof(config.ntpServ2));
@@ -435,7 +436,7 @@ void updateConfiguration(WebServer &serverWeb, SystemConfigStruct &configSys, Ne
 
             if (serverWeb.hasArg(refreshLogsKey))
             {
-                configSys.refreshLogs = serverWeb.arg(refreshLogsKey).toInt();
+                configSys.refreshLogs = webRefreshSeconds(serverWeb.arg(refreshLogsKey).toInt());
             }
 
             if (serverWeb.hasArg(hostnameKey))
@@ -1200,7 +1201,7 @@ bool loadFileConfigGeneral()
     }
     else
     {
-        systemCfg.refreshLogs = (int)doc[refreshLogsKey] / 1000;
+        systemCfg.refreshLogs = webRefreshSeconds((int)doc[refreshLogsKey] / 1000);
     }
 
     strlcpy(systemCfg.hostname, doc[hostnameKey] | "", sizeof(systemCfg.hostname));
