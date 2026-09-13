@@ -2,6 +2,8 @@
 #include "CCTools.h"
 #include <HTTPClient.h>
 #include <WiFi.h>
+#include <memory>
+#include <new>
 
 #ifndef DEBUG_PRINT
 #ifdef DEBUG
@@ -52,27 +54,17 @@ bool CommandInterface::_sendSynch()
 
 bool CommandInterface::_wait_for_ack(unsigned long timeout = 1)
 {
-    unsigned long startMillis = millis();
-    while (millis() - startMillis < timeout * 1000)
-    {
-        if (_stream.available() >= 1)
-        {
-            uint8_t received = _stream.read();
-            if (received == ACK_BYTE)
-            {
-                // DEBUG_PRINTLN("ACK received");
-                return true;
-            }
-            else if (received == NACK_BYTE)
-            {
-                // DEBUG_PRINTLN("NACK received");
-                return false;
-            }
-        }
+    unsigned long start=millis();
+    while (millis()-start<timeout*1000UL) {
+        if(_stream.available()) {
+            int b=_stream.read();
+            if(b==ACK_BYTE) return true;
+            if(b==NACK_BYTE) { bslError="bsl_nack"; return false; }
+        } else delay(1);
     }
-    DEBUG_PRINTLN("Timeout waiting for ACK/NACK");
-    return false;
+    bslError="bsl_ack_timeout"; return false;
 }
+
 
 byte *CommandInterface::_receive_SRSP(unsigned long timeout = 500)
 {
@@ -109,94 +101,30 @@ byte *CommandInterface::_receive_SRSP(unsigned long timeout = 500)
 
 uint32_t CommandInterface::_cmdGetChipId()
 {
-    const u_int32_t cmd = 0x28;
-    const u_int32_t lng = 3;
-
-    _stream.write(lng); //  # send size
-    _stream.write(cmd); //  # send checksum
-    _stream.write(cmd); //  # send data
-    if (_wait_for_ack())
-    {
-        // 4 byte answ, the 2 LSB hold chip ID
-        byte *version = _receivePacket();
-        // DEBUG_PRINTLN("size " + String(sizeof(version)));
-        if (_checkLastCmd())
-        {
-
-            uint32_t value = 0;
-            value |= uint32_t(version[3]) << 0; // Least significant byte
-            value |= uint32_t(version[2]) << 8;
-            value |= uint32_t(version[1]) << 16;
-            value |= uint32_t(version[0]) << 24; // Most significant byte
-            // DEBUG_PRINT("ChipId ");
-            // DEBUG_PRINTLN(value, HEX);
-
-            if (sizeof(version) != 4)
-            {
-                DEBUG_PRINTLN("Unreasonable chip. Looks upper"); // repr(version) ?
-                return uint32_t(0);
-            }
-
-            uint32_t chip_id = (version[0] << 8) | (version[1]);
-
-            return chip_id;
-        }
-    }
-    return uint32_t(0);
+    const byte request[]={3,0x28,0x28}; _stream.write(request,sizeof(request));
+    byte version[4];
+    if(!_wait_for_ack() || !_receivePacket(version,4) || !_checkLastCmd()) return 0;
+    return (uint32_t(version[0])<<8)|version[1];
 }
 
-byte *CommandInterface::_cmdGetStatus()
+
+bool CommandInterface::_cmdGetStatus(uint8_t &status)
 {
-    const u_int32_t cmd = 0x23;
-    const u_int32_t lng = 3;
-
-    _stream.write(lng); //  # send size
-    _stream.write(cmd); //  # send checksum
-    _stream.write(cmd); //  # send data
-
-    // mdebug(10, "*** GetStatus command (0x23)")
-    if (_wait_for_ack())
-    {
-        byte *stat = _receivePacket();
-        return stat;
-    }
-    DEBUG_PRINT("Error _cmdGetStatus");
-    return nullptr;
+    const byte request[]={3,0x23,0x23};
+    _stream.write(request,sizeof(request));
+    return _wait_for_ack() && _receivePacket(&status,1);
 }
+
 
 bool CommandInterface::_checkLastCmd()
 {
-
-    byte *stat = _cmdGetStatus();
-    if (stat == nullptr)
-    {
-        DEBUG_PRINTLN("No response from target on status request.");
-        DEBUG_PRINTLN("(Did you disable the bootloader?)");
-        return 0;
-    }
-    else
-    {
-        if (stat[0] == COMMAND_RET_SUCCESS)
-        {
-            // DEBUG_PRINTLN("Command Successful");
-            return 1;
-        }
-        else
-        {
-            const char *stat_str = _getStatusString(stat[0]);
-            if (stat_str == "Unknown")
-            {
-                DEBUG_PRINTLN("Warning: unrecognized status returned 0x" + String(stat[0]));
-            }
-            else
-            {
-                DEBUG_PRINTLN("Target returned: 0x" + String(stat[0]) + " " + String(stat_str));
-            }
-            return 0;
-        }
-    }
-    return 0;
+    uint8_t status=0;
+    if(!_cmdGetStatus(status)) return false;
+    bslStatus=status;
+    if(status!=COMMAND_RET_SUCCESS) { bslError="bsl_command_status"; return false; }
+    return true;
 }
+
 
 void CommandInterface::_sendAck()
 {
@@ -223,7 +151,7 @@ bool CommandInterface::_eraseFlash()
     _stream.write(cmd); //  # send checksum
     _stream.write(cmd); //  # send data
 
-    if (_wait_for_ack())
+    if (_wait_for_ack(10))
     {
         if (_checkLastCmd())
         {
@@ -268,7 +196,6 @@ bool CommandInterface::_cmdDownload(uint32_t address, unsigned long size)
     // DEBUG_PRINTLN("*** Mem Read (0x2A)");
     if (_wait_for_ack())
     {
-        byte *data = _receivePacket();
         if (_checkLastCmd())
         {
             return true;
@@ -351,62 +278,43 @@ byte *CommandInterface::_cmdMemRead(uint32_t address)
     // DEBUG_PRINTLN("*** Mem Read (0x2A)");
     if (_wait_for_ack())
     {
-        byte *data = _receivePacket();
-        if (_checkLastCmd())
+        std::unique_ptr<byte[]> data(_receivePacket());
+        if (data && _checkLastCmd())
         {
-            return data;
+            return data.release();
         }
     }
     return 0;
 }
 
+bool CommandInterface::_receivePacket(byte *data,size_t expected,unsigned long timeout)
+{
+    // A whole response has one deadline. No uninitialised length, short reads,
+    // per-byte timeout extension, or heap allocation on the flashing path.
+    if(!data || !expected || expected>253) { bslError="bsl_packet_length"; return false; }
+    byte packet[255]; size_t used=0; unsigned long start=millis();
+    while(used<expected+2 && millis()-start<timeout) {
+        if(!_stream.available()) { delay(1); continue; }
+        int value=_stream.read(); if(value<0) continue;
+        if(!used && !value) continue; // ROM permits zero padding before size.
+        if(!used && size_t(value)!=expected+2) { bslError="bsl_packet_length"; _sendNAck(); return false; }
+        packet[used++]=value;
+    }
+    if(used!=expected+2) { bslError="bsl_packet_timeout"; return false; }
+    byte sum=0; for(size_t i=2;i<used;i++) sum+=packet[i];
+    if(sum!=packet[1]) { bslError="bsl_packet_checksum"; _sendNAck(); return false; }
+    memcpy(data,packet+2,expected); _sendAck(); return true;
+}
+
 byte *CommandInterface::_receivePacket()
 {
-    byte got[2];
-    // Read the initial 2 bytes which contain size and checksum
-    // The _read function should be defined elsewhere to read bytes from a communication interface.
-    _stream.readBytes(got, 2);
-
-    byte size = got[0];              // rcv size
-    byte chks = got[1];              // rcv checksum
-    byte *data = new byte[size - 2]; // Allocate buffer for the data
-
-    // Now read the rest of the packet
-    if (!_stream.readBytes(data, size - 2))
-    {
-        // Handle read error
-        delete[] data; // Remember to free the memory if an error occurs
-        return nullptr;
-    }
-
-    // Debugging output, might use DEBUG_PRINT in Arduino
-    // DEBUG_PRINT(F("*** received "));
-    // DEBUG_PRINT(size, HEX);
-    // DEBUG_PRINTLN(F(" bytes"));
-
-    // Calculate checksum
-    byte calculatedChks = 0;
-    for (int i = 0; i < size - 2; i++)
-    {
-        calculatedChks += data[i];
-    }
-    calculatedChks &= 0xFF;
-
-    // Check the checksum
-    if (chks == calculatedChks)
-    {
-        _sendAck(); // This function needs to be implemented
-        return data;
-    }
-    else
-    {
-        _sendNAck();   // This function needs to be implemented
-        delete[] data; // Free the memory
-        // Handle checksum error
-        // You could set an error flag or return a null pointer.
-        return nullptr;
-    }
+    // The legacy probe API transfers one 32-bit word; callers own the buffer.
+    std::unique_ptr<byte[]> data(new(std::nothrow) byte[4]);
+    if(!data) { bslError="bsl_memory"; return nullptr; }
+    if(!_receivePacket(data.get(),4)) return nullptr;
+    return data.release();
 }
+
 
 void CommandInterface::_encodeAddr(unsigned long addr, byte encodedAddr[4])
 {
@@ -698,6 +606,7 @@ void CCTools::enterBSL()
         // DEBUG_PRINTLN(F("Zigbee BSL pin OFF"));
         delay(500);
     }
+    _cleanBuffer();
     bslActive = 1;
 }
 
@@ -739,7 +648,8 @@ bool CCTools::detectChipInfo()
 
     // DEBUG_PRINTLN(chip_id, HEX);
 
-    byte *device_id = _cmdMemRead(ICEPICK_DEVICE_ID);
+    std::unique_ptr<byte[]> device_id(_cmdMemRead(ICEPICK_DEVICE_ID));
+    if(!device_id) return false;
     // DEBUG_PRINTLN(sizeof(device_id));
 
     uint32_t wafer_id = (((device_id[3] & 0x0F) << 16) +
@@ -755,7 +665,8 @@ bool CCTools::detectChipInfo()
     // DEBUG_PRINT("pg_rev: ");
     // DEBUG_PRINTLN(pg_rev, HEX);
 
-    byte *user_id = _cmdMemRead(FCFG_USER_ID);
+    std::unique_ptr<byte[]> user_id(_cmdMemRead(FCFG_USER_ID));
+    if(!user_id) return false;
 
     // DEBUG_PRINTLN("Package: " + _getPackageString(user_id[2]));
 
@@ -763,16 +674,19 @@ bool CCTools::detectChipInfo()
     // DEBUG_PRINT("protocols: ");
     // DEBUG_PRINTLN(protocols, HEX);
 
-    byte *flash_size = _cmdMemRead(FLASH_SIZE);
+    std::unique_ptr<byte[]> flash_size(_cmdMemRead(FLASH_SIZE));
+    if(!flash_size) return false;
     // DEBUG_PRINT("flash_size: ");
     // DEBUG_PRINTLN(flash_size[0], HEX);
 
-    // byte *ram_size = _cmdMemRead(PRCM_RAMHWOPT);
+    // RAM size is not needed for flashing.
     // DEBUG_PRINT("ram_size: ");
     // DEBUG_PRINTLN(ram_size[0], HEX);
 
-    byte *ieee_b1 = _cmdMemRead(addr_ieee_address_primary + 4);
-    byte *ieee_b2 = _cmdMemRead(addr_ieee_address_primary);
+    std::unique_ptr<byte[]> ieee_b1(_cmdMemRead(addr_ieee_address_primary + 4));
+    if(!ieee_b1) return false;
+    std::unique_ptr<byte[]> ieee_b2(_cmdMemRead(addr_ieee_address_primary));
+    if(!ieee_b2) return false;
 
     if (ieee_b1 == nullptr || ieee_b2 == nullptr)
     {
@@ -794,19 +708,19 @@ bool CCTools::detectChipInfo()
 
     chip.ieee = ieeeAddr;
 
-    delete[] ieee_b1;
-    delete[] ieee_b2;
+
 
     String chip_str;
-    if (protocols & PROTO_MASK_IEEE == PROTO_MASK_IEEE)
+    if ((protocols & PROTO_MASK_IEEE) == PROTO_MASK_IEEE)
     {
         uint32_t test = 360372;
         // DEBUG_PRINT(test, HEX);
-        byte *b_val = _cmdMemRead(test);
+        std::unique_ptr<byte[]> b_val(_cmdMemRead(test));
+        if(!b_val) return false;
 
         chip.hwRev = _getChipDescription(chip_id, wafer_id, pg_rev, b_val[1]);
         int page_size = 4096;
-        if (chip.hwRev.indexOf("P7"))
+        if (chip.hwRev.indexOf("P7") >= 0)
         {
             page_size = page_size * 2;
         }
@@ -814,13 +728,15 @@ bool CCTools::detectChipInfo()
 
         test = chip.flashSize - 88 + 0xC;
         //DEBUG_PRINT(test, HEX);
-        b_val = _cmdMemRead(test);
+        b_val.reset(_cmdMemRead(test));
+        if(!b_val) return false;
 
         chip.modeCfg = _decodeAddr(b_val[3], b_val[2], b_val[1], b_val[0]);
 
         uint32_t bsl_adr = chip.flashSize - 88 + 0x30;
         //DEBUG_PRINT(bsl_adr, HEX);
-        byte *bsl_val = _cmdMemRead(bsl_adr);
+        std::unique_ptr<byte[]> bsl_val(_cmdMemRead(bsl_adr));
+        if(!bsl_val) return false;
 
         chip.bslCfg = _decodeAddr(bsl_val[3], bsl_val[2], bsl_val[1], bsl_val[0]);
 
@@ -831,6 +747,7 @@ bool CCTools::detectChipInfo()
 
 bool CCTools::eraseFlash()
 {
+    bslError="none"; bslStatus=0;
     if (!bslActive)
     {
         enterBSL();
@@ -847,22 +764,38 @@ bool CCTools::eraseFlash()
 
 bool CCTools::beginFlash(uint32_t startAddr, int totalSize)
 {
-    this->currentAddr = startAddr;
-    return _cmdDownload(startAddr, totalSize);
+    flashRemaining=0; bslError="none"; bslStatus=0;
+    if(totalSize<=0 || (startAddr&3) || (totalSize&3) || !chip.flashSize ||
+       startAddr>chip.flashSize || uint32_t(totalSize)>chip.flashSize-startAddr) { bslError="bsl_flash_range"; return false; }
+    if(!_cmdDownload(startAddr,totalSize)) return false;
+    currentAddr=startAddr; flashRemaining=totalSize; return true;
 }
+
 
 bool CCTools::processFlash(byte *data, int size)
 {
-    if (memcmp(data, this->emptyPacket, size) != 0)
-    {
-        if (!_cmdSendData(data, size))
-        {
-            return false;
-        }
-    }
-    this->currentAddr += size;
+    if(!data || size<=0 || size>TRANSFER_SIZE || (size&3) || uint32_t(size)>flashRemaining) { bslError="bsl_flash_range"; return false; }
+    // SEND_DATA advances the ROM's address. Skipping an FF block here would
+    // shift all subsequent data, including CCFG, to the wrong address.
+    if(!_cmdSendData(data,size)) { flashRemaining=0; return false; }
+    currentAddr+=size; flashRemaining-=size; return true;
+}
+
+bool CCTools::verifyFlash(uint32_t startAddr,uint32_t size,uint32_t expectedCrc)
+{
+    if(flashRemaining || !size || startAddr>chip.flashSize || size>chip.flashSize-startAddr) { bslError="bsl_flash_range"; return false; }
+    // CC13xx/CC26xx CMD_CRC32: address, byte count, zero read-repeat count.
+    byte request[15]={15,0,0x27};
+    _encodeAddr(startAddr,request+3); _encodeAddr(size,request+7);
+    for(unsigned i=2;i<sizeof(request);i++) request[1]+=request[i];
+    _stream.write(request,sizeof(request));
+    byte crc[4];
+    if(!_wait_for_ack(5) || !_receivePacket(crc,4,5000) || !_checkLastCmd()) return false;
+    uint32_t actual=(uint32_t(crc[0])<<24)|(uint32_t(crc[1])<<16)|(uint32_t(crc[2])<<8)|crc[3];
+    if(actual!=expectedCrc) { bslError="bsl_crc_mismatch"; return false; }
     return true;
 }
+
 
 bool CCTools::checkFirmwareVersion()
 {

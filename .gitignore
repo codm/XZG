@@ -17,4 +17,11 @@ gzipped/
 */tools/*
 min/
 node_modules
-package-lock.json 
+package-lock.json
+/.cache/
+/.backhaul-tests/
+!/tools/backhaul/
+!/tools/backhaul/**
+/bin/czc_fw_*.bin
+**/__pycache__/
+*.pyc

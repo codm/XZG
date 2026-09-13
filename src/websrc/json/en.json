@@ -1,476 +1,673 @@
 {
-  "l": {
-    "st": "Status",
-    "ge": "General",
-    "ne": "Network",
-    "zi": "Zigbee",
-    "mq": "MQTT",
-    "vp": "VPN",
-    "se": "Security",
-    "to": "System",
-    "ab": "About",
-    "lo": "Logout"
-  },
-  "p": {
-    "st": {
-      "dic": {
-        "tt": "Device",
-        "dm": "Model",
-        "et": "Temperature",
-        "ef": "Processor",
-        "cs": "cores",
-        "mhz": "MHz",
-        "efs": "Memory",
-        "mb": "Mb",
-        "ehs": "Heap",
-        "kb": "KiB",
-        "efti": "internal",
-        "efte": "external",
-        "ens": "NV storage",
-        "ent": "entries",
-        "efss": "File system",
-        "du": "Operating time",
-        "lt": "Local time",
-        "et1": "1W Temperature"
-      },
-      "te": "Ethernet",
-      "tw": "WiFi",
-      "tm": "MQTT",
-      "wgc": {
-        "tt": "WireGuard",
-        "lip": "Local IP address",
-        "ed": "Endpoint address",
-        "pip": "Peer IP address"
-      },
-      "tvh": "Husarnet",
-      "wc": {
-        "mcl": "Client",
-        "map": "AP"
-      },
-      "zbc": {
-        "op": "Mode",
-        "opn": "Zigbee-Network",
-        "opu": "Zigbee-USB",
-        "scc": "Socket",
-        "sccn": "No connection",
-        "sccy": "{{count}} clients",
-        "fwer": "Faulty firmware installation",
-        "su": "Connection time",
-        "zfs": "Flash size",
-        "zie": "IEEE"
-      },
-      "c": {
-        "fv": "Firmware",
-        "hv": "Hardware",
-        "r": "Role"
-      },
-      "zr": {
-        "c": "Coordinator",
-        "r": "Router",
-        "t": "OpenTread"
-      }
+    "l": {
+        "st": "Status",
+        "ge": "General",
+        "ne": "Network",
+        "zi": "Zigbee",
+        "mq": "MQTT",
+        "vp": "VPN",
+        "se": "Security",
+        "to": "System",
+        "ab": "About",
+        "lo": "Logout"
     },
-    "ge": {
-      "desc": "Settings",
-      "host": {
-        "n": "Hostname",
-        "ph": "Access device over network using this name.local",
-        "tt": "Latin letters and numbers, no spaces"
-      },
-      "refresh": {
-        "n": "Web refresh interval",
-        "ph": "in seconds",
-        "tt": "?"
-      },
-      "work": {
-        "mode": {
-          "desc": "Device operating mode",
-          "net": "NETWORK mode",
-          "usb": "USB mode"
-        }
-      },
-      "kw": "Keep network & web server",
-      "led": {
-        "desc": "LED configuration",
-        "dis": "Full disable",
-        "pwr": "Power LED",
-        "mode": "Work mode LED",
-        "night": "Night mode"
-      },
-      "ntp": {
-        "desc": "NTP",
-        "zone": "Timezone",
-        "server": {
-          "n": "NTP server",
-          "ph": "pool.ntp.org",
-          "tt": "Enter valid domain name"
-        }
-      },
-      "u": {
-        "h": "New firmware check time",
-        "d": {
-          "tt": "Day of week",
-          "ev": "Everyday",
-          "mn": "Monday",
-          "tu": "Tuesday",
-          "wd": "Wednesday",
-          "th": "Thursday",
-          "fr": "Friday",
-          "sa": "Saturday",
-          "su": "Sunday"
+    "p": {
+        "st": {
+            "dic": {
+                "tt": "Device",
+                "dm": "Model",
+                "et": "Temperature",
+                "ef": "Processor",
+                "cs": "cores",
+                "mhz": "MHz",
+                "efs": "Memory",
+                "mb": "Mb",
+                "ehs": "Heap",
+                "kb": "KiB",
+                "efti": "internal",
+                "efte": "external",
+                "ens": "NV storage",
+                "ent": "entries",
+                "efss": "File system",
+                "du": "Operating time",
+                "lt": "Local time",
+                "et1": "1W Temperature"
+            },
+            "te": "Ethernet",
+            "tw": "WiFi",
+            "tm": "MQTT",
+            "wgc": {
+                "tt": "WireGuard",
+                "lip": "Local IP address",
+                "ed": "Endpoint address",
+                "pip": "Peer IP address"
+            },
+            "tvh": "Husarnet",
+            "wc": {
+                "mcl": "Client",
+                "map": "AP"
+            },
+            "zbc": {
+                "op": "Mode",
+                "opn": "Zigbee-Network",
+                "opu": "Zigbee-USB",
+                "scc": "Socket",
+                "sccn": "No connection",
+                "sccy": "{{count}} clients",
+                "fwer": "Faulty firmware installation",
+                "su": "Connection time",
+                "zfs": "Flash size",
+                "zie": "IEEE"
+            },
+            "c": {
+                "fv": "Firmware",
+                "hv": "Hardware",
+                "r": "Role"
+            },
+            "zr": {
+                "c": "Coordinator",
+                "r": "Router",
+                "t": "OpenTread"
+            }
         },
-        "ai": "Auto install updates (ESP32 and Zigbee)"
-      }
+        "ge": {
+            "desc": "Settings",
+            "host": {
+                "n": "Hostname",
+                "ph": "Access device over network using this name.local",
+                "tt": "Latin letters and numbers, no spaces"
+            },
+            "refresh": {
+                "n": "Web refresh interval",
+                "ph": "in seconds",
+                "tt": "?"
+            },
+            "work": {
+                "mode": {
+                    "desc": "Device operating mode",
+                    "net": "NETWORK mode",
+                    "usb": "USB mode"
+                }
+            },
+            "kw": "Keep network & web server",
+            "led": {
+                "desc": "LED configuration",
+                "dis": "Full disable",
+                "pwr": "Power LED",
+                "mode": "Work mode LED",
+                "night": "Night mode"
+            },
+            "ntp": {
+                "desc": "NTP",
+                "zone": "Timezone",
+                "server": {
+                    "n": "NTP server",
+                    "ph": "pool.ntp.org",
+                    "tt": "Enter valid domain name"
+                }
+            },
+            "u": {
+                "h": "New firmware check time",
+                "d": {
+                    "tt": "Day of week",
+                    "ev": "Everyday",
+                    "mn": "Monday",
+                    "tu": "Tuesday",
+                    "wd": "Wednesday",
+                    "th": "Thursday",
+                    "fr": "Friday",
+                    "sa": "Saturday",
+                    "su": "Sunday"
+                },
+                "ai": "Auto install updates (ESP32 and Zigbee)"
+            }
+        },
+        "ne": {
+            "descEth": "Ethernet",
+            "dhcp": "DHCP",
+            "ip": "IP",
+            "mask": "Subnet",
+            "gw": "Gateway",
+            "dns": "DNS",
+            "descWifi": "Wi-Fi",
+            "wifi": {
+                "btn": {
+                    "scan": "Scan for Wi-Fi networks",
+                    "man": "Enter manually"
+                },
+                "rssi": "RSSI",
+                "ssid": "SSID",
+                "sc": "Security",
+                "ch": "Channel",
+                "nnf": "WiFi networks not found",
+                "mode": "Mode",
+                "power": "Tx Power"
+            },
+            "wvi": {
+                "title": "Attention",
+                "1": "We strongly advise against using Wi-Fi in ZigBee operation. Serial communication over Wi-Fi is not robust enough and does not contain any error correction mechanisms to compensate for fluctuating connections or packet loss. The same applies to WAN and VPN connections. See also:",
+                "2": "When used as a Thread Border Router (currently under development), this problem does not occur."
+            },
+            "live": {
+                "title": "Current addresses",
+                "interface": "Interface",
+                "state": "Connection",
+                "eth": "Ethernet",
+                "wifi": "Wi-Fi",
+                "ap": "Wi-Fi access point",
+                "connected": "Connected",
+                "disconnected": "No connection",
+                "disabled": "Disabled",
+                "waiting": "Waiting for an address",
+                "linkLocal": "Link-local",
+                "refresh": "Refresh",
+                "failed": "Could not read network addresses. Check the connection and try again.",
+                "help": "IPv6 addresses appear automatically. Link-local works within the local network; a routed address requires IPv6 support on your router."
+            }
+        },
+        "zi": {
+            "so": "Serial settings",
+            "ss": "Speed",
+            "sp": "Port",
+            "cfg": {
+                "tt": "Configuration generator",
+                "sel": "Generate for",
+                "alarm": "CZC is operating in access point mode (IP 192.168.1.1). The IP address will change after connecting to Ethernet or Wi-Fi, after which you will need to regenerate the configuration.",
+                "ss": "Serial settings",
+                "lxzg": "Location of CZC",
+                "dzl": "Disable Zigbee led?",
+                "sopm": "Set output power to max 20",
+                "ha": "For Home Assistant: Go to \"Settings\"→\"System\"→\"Hardware\"→Select the 3 dot menu in the upper right corner→\"All Hardware\"→Scroll to ttyUSB and find your adapter→Copy Device path like \"/dev/ttyUSB0\"",
+                "lin": "List of USB devices in Linux: ls  /dev/ttyUSB*",
+                "dp": "INSERT_DEVICE_PATH_HERE",
+                "zrci": "No further configuration is required in router mode."
+            },
+            "fws": {
+                "tt": "Device Role",
+                "alarm": "Changing the firmware while the network is running will lead to its destruction!"
+            }
+        },
+        "mq": {
+            "enb": "Enable this to activate MQTT settings",
+            "desc": "Settings",
+            "broker": {
+                "n": "Server",
+                "ph": "Domain name or IP address",
+                "tt": "Enter valid domain or IP"
+            },
+            "port": {
+                "n": "Port",
+                "ph": "MQTT port number",
+                "tt": "Enter the port number (usually 1883)"
+            },
+            "topic": {
+                "n": "Topic",
+                "ph": "MQTT topic",
+                "tt": "Enter the MQTT topic of device X/Y/Z or X/Y or X. No spaces."
+            },
+            "interval": {
+                "n": "Interval",
+                "ph": "Update interval in seconds",
+                "tt": "Enter how often to send updates (in seconds)"
+            },
+            "disc": {
+                "n": "Home Assistant (MQTT Discovery)",
+                "ph": "Enable or disable",
+                "tt": "💡 Enable this for Home Assistant MQTT discovery feature"
+            },
+            "user": {
+                "ph": "Username",
+                "tt": "Enter username from your MQTT server"
+            },
+            "pass": {
+                "ph": "Password",
+                "tt": "Enter password from your MQTT server"
+            },
+            "reconnect": {
+                "n": "Reconnect",
+                "ph": "Reconnect interval in seconds",
+                "tt": "Enter fast try to reconnect MQTT server (in seconds)"
+            }
+        },
+        "vp": {
+            "wg": {
+                "tt": "WireGuard Interface Settings",
+                "lip": "IP address of the local interface",
+                "lpk": "Private key of the local interface",
+                "ea": "Address of the endpoint peer",
+                "epk": "Public key of the endpoint peer",
+                "ep": "Port of the endpoint peer",
+                "lsn": "Local Subnet",
+                "lgw": "Local Gateway",
+                "aip": "Allowed IPs",
+                "am": "Allowed Subnet",
+                "md": "Make default",
+                "psk": "Pre-shared key",
+                "lp": "Local port"
+            },
+            "hn": {
+                "tt": "Husarnet config (in develope)",
+                "jc": "Join Code for your network",
+                "hn": "Host name for your device",
+                "du": "Dashboard URL (leave 'default')"
+            }
+        },
+        "se": {
+            "desc": "Settings",
+            "web": {
+                "dis": "Disable web server when establishing Zigbee socket connection",
+                "auth": "Enable web server authentication"
+            },
+            "fw": {
+                "desc": "IP whitelist for Zigbee socket connection",
+                "ip": "Allowed IP"
+            }
+        },
+        "to": {
+            "sc": "System",
+            "fu": "Firmware",
+            "dt": "Debug",
+            "mc": "Modules control",
+            "zb": "Zigbee",
+            "rst": "Restart",
+            "fm": "Flash Mode",
+            "rr": "Router Reconnect",
+            "esp": "ESP32",
+            "fr": "Factory reset",
+            "csc": "Peripherals control",
+            "ms": "Mode select",
+            "ntw": "Network",
+            "usb": "USB",
+            "lt": "LEDs toggle",
+            "ls": "starting...",
+            "lb": "blinking...",
+            "pwr": "Power",
+            "mode": "Mode",
+            "dc": "Console",
+            "rd": "Raw data ",
+            "cc": "Clear",
+            "czc": "Check Zigbee connect",
+            "czv": "Check Zigbee version",
+            "fb": "File Browser",
+            "fn": "Filename",
+            "s": "Size",
+            "egu": "ESP32",
+            "efu": "ESP32 manual flashing",
+            "cf": "Select firmware file...",
+            "ilfg": "Install latest",
+            "zu": "Zigbee update",
+            "saf": "Show available...",
+            "zgu": "Zigbee",
+            "eznr": "Erase NVRAM",
+            "ulcc": "Unlearn ZigBee Router",
+            "zgf": "Available firmware from Git"
+        },
+        "lo": {
+            "pt": "Login - CZC",
+            "lbl": "Please sign in",
+            "btn": "Sign in",
+            "mnl": "Need to login",
+            "mwc": "Wrong credentials",
+            "mlo": "Logged out success"
+        },
+        "ab": {
+            "l1": "CZC Firmware unifies the best innovations from",
+            "l2": "previous Zigbee gateway projects into a single, comprehensive solution.",
+            "l3": "By focusing the community's efforts on enhancing one product, CZC aims to streamline development, thereby improving the capabilities and efficiency of your Zigbee Gateways. 🌍",
+            "w": {
+                "t": "Wiki",
+                "m": "To learn more about the CZC firmware project, visit our: 📘",
+                "l": "Official Wiki"
+            },
+            "f": {
+                "t": "Feedback",
+                "m": "If you have any ideas, suggestions, or wish to help in other ways, please don't hesitate to: 📬",
+                "l": "Contact the author"
+            },
+            "s": {
+                "m": "Support this project through one of the following ways: 💖",
+                "t": "Support"
+            },
+            "c": {
+                "t": "Contribute",
+                "m": "Join us in improving translating, enhancing documentation, or coding new features. 💻",
+                "l": "Project Repository"
+            },
+            "r": {
+                "t": "Report",
+                "m": "To report a bug or request a feature, please: 🐞",
+                "l": "Open an Issue"
+            },
+            "cm": {
+                "m": "Your insights, feedback, and collaboration are invaluable to us 🤝",
+                "t": "Community",
+                "l": "Join Telegram group",
+                "d": "Join Discord community"
+            }
+        },
+        "bh": {
+            "title": "Encrypted CZC network — up to 8 Satellites",
+            "description": "Extend one Zigbee network over an encrypted IP connection. Zigbee software connects to Master; up to eight Satellites provide remote radio coverage. Use the same PSK on every node.",
+            "mode": "Node mode",
+            "off": "Ordinary CZC (disabled)",
+            "master": "Master — coordinator",
+            "satellite": "Satellite — router",
+            "own": "This radio's IEEE",
+            "host": "Master address",
+            "key": "Shared PSK (64 hexadecimal characters)",
+            "show": "Show / hide",
+            "copy": "Copy",
+            "generate": "Generate",
+            "keyHelp": "Use the same PSK on Master and all Satellites. Generate once and copy to the other nodes. An empty field keeps the saved key.",
+            "port": "Peer TLS port",
+            "network": "Current IPv4/IPv6 addresses and connection settings are in Network.",
+            "networkLink": "Network",
+            "save": "Save and restart ESP32",
+            "refresh": "Refresh status",
+            "joinButton": "Retry Satellite setup",
+            "connected": "Connected",
+            "disconnected": "Disconnected",
+            "copied": "Key copied.",
+            "copyFailed": "Select the key and copy it manually.",
+            "generated": "Key generated. Copy it to the other nodes and save the settings.",
+            "saved": "Settings saved. ESP32 is restarting; this page will reload.",
+            "joining": "Configuring Satellite over the encrypted IP link…",
+            "requestFailed": "Request failed. Check the connection and reload this page.",
+            "errors": {
+                "invalid_settings": "Invalid settings.",
+                "invalid_mode": "Unknown mode.",
+                "invalid_host": "Invalid address; use an IP or hostname without a URL scheme.",
+                "port_conflict": "Ports must be distinct and in the range 1024–65535.",
+                "master_address_required": "Specify the Master address.",
+                "network_required": "Enable Ethernet or Wi-Fi in Network.",
+                "select_network_mode": "Select network operation instead of USB mode first.",
+                "radio_baud_115200_required": "Set the radio serial speed to 115200.",
+                "storage_error": "Failed to save settings.",
+                "authentication_required": "Log in to the web UI.",
+                "reload_page": "Reload this page and try again.",
+                "entropy_unavailable": "Random generator unavailable; restart ESP32.",
+                "satellite_required": "Save Satellite mode and restart first.",
+                "busy": "Another operation is running.",
+                "key_required": "Set a shared PSK",
+                "invalid_key": "Invalid PSK",
+                "coordinator_required": "Select and apply the Zigbee Coordinator firmware role first."
+            },
+            "faults": {
+                "none": "Peer authenticated",
+                "disabled": "Ordinary CZC mode",
+                "unconfigured": "Settings have not been applied yet",
+                "usb_mode": "USB mode is selected. Node connections require network mode.",
+                "awaiting_peer": "Waiting for Satellites",
+                "peer_connect": "Connecting to Master; check its address and port if this persists",
+                "peer_connect_timeout": "Master did not answer; retrying automatically",
+                "peer_disconnected": "Peer disconnected; reconnecting",
+                "peer_identity_or_network": "Check peer IEEE, role, PAN and channel",
+                "radio_revision": "Radio firmware 20260917 is required. Update it in Tools.",
+                "own_ieee": "Invalid or duplicate radio IEEE",
+                "radio_busy": "Radio busy",
+                "radio_baud_115200_required": "Radio requires 115200 baud",
+                "paused": "Paused by administrator",
+                "maintenance": "Radio maintenance",
+                "joining": "Configuring Satellite",
+                "join_failed": "Join failed; see result",
+                "listen_failed": "Cannot open configured port",
+                "uart_desync": "UART error; bounded automatic recovery in progress",
+                "radio_reset": "Waiting for radio restart to finish",
+                "radio_initializing": "Initializing radio and restoring network settings (up to 40 s)",
+                "network_changed": "Zigbee network changed; reconnecting",
+                "peer_deadline": "Peer response deadline; reconnecting",
+                "peer_protocol": "Peer protocol error",
+                "radio_lease": "Radio lease failed",
+                "radio_frame": "Invalid radio frame",
+                "admin_reconnect": "Reconnecting",
+                "epoch": "Session error",
+                "epoch_storage": "Session storage error",
+                "entropy_or_memory": "Random generator or memory unavailable",
+                "uart_task_failed": "Cannot start UART task",
+                "peer_task_failed": "Cannot start peer task",
+                "storage": "NVS unavailable",
+                "memory": "Insufficient memory",
+                "tls_handshake": "TLS handshake failed; check the shared key and peer port",
+                "uart_recovery_exhausted": "Radio did not recover after 3 attempts; check firmware and restart from Tools",
+                "peer_identity": "Invalid radio identity",
+                "duplicate_peer": "Duplicate connected IEEE or address",
+                "peer_capacity": "Eight-Satellite capacity reached",
+                "provisioning": "Transferring network settings",
+                "bootstrap_required": "Satellite setup required",
+                "master_network": "The Master Zigbee network is not running. Connect your Zigbee software and restore or create the network.",
+                "already_joined": "Radio already belongs to another Zigbee network",
+                "bootstrap_storage": "Radio settings storage failed",
+                "bootstrap_identity": "Profile identity mismatch",
+                "bootstrap_radio": "Radio setup failed",
+                "counter_exhausted": "Radio security counter exhausted",
+                "offline": "Offline",
+                "memory_or_epoch": "Insufficient connection memory",
+                "awaiting_master": "Waiting for Master; reconnecting automatically",
+                "status_unavailable": "Could not read device status. Reload the page.",
+                "radio_info": "Radio version query failed. Check radio firmware and UART.",
+                "network_migrating": "Master restored a different network. Satellite is reconfiguring automatically"
+            },
+            "joins": {
+                "joining": "Joining",
+                "joined": "Satellite joined",
+                "stop_controller": "Stop the applications connected to the coordinator first",
+                "master_unavailable": "Master unavailable; check address, PSK, port and controller connection",
+                "master_network": "Master has no Zigbee network yet",
+                "radio_unavailable": "Local backhaul radio unavailable",
+                "already_joined": "Radio already belongs to another Zigbee network",
+                "radio_busy": "Radio still has pending work",
+                "radio_configuration": "Cannot configure router role",
+                "permit_join": "Master did not open joining",
+                "join_timeout": "No join within 60 seconds; bring devices into radio range",
+                "wrong_network": "Satellite joined another network",
+                "permit_close": "Join completed but closing permit-join was not confirmed; it expires after 60 s",
+                "bootstrap_storage": "Radio settings storage failed",
+                "bootstrap_identity": "Profile identity mismatch",
+                "bootstrap_radio": "Radio setup failed",
+                "counter_exhausted": "Radio security counter exhausted",
+                "peer_capacity": "Eight-Satellite capacity reached",
+                "restoring": "Applying radio settings",
+                "requested": "Setup requested",
+                "awaiting_master": "Waiting for Master; reconnecting automatically",
+                "network_migrating": "Master restored a different network. Satellite is reconfiguring automatically"
+            },
+            "flashNote": "Radio BIN only. Flashing may erase the Zigbee network: back up the network first.",
+            "flashFailed": "Radio update failed. Check the BIN and device log; the web UI remains available for another attempt.",
+            "hostHelp": "IPv4, IPv6 or hostname.",
+            "satellitesConnected": "Satellites connected",
+            "masterConnected": "Connected to Master",
+            "waitingSatellites": "Waiting for Satellites",
+            "connectingMaster": "Connecting to Master",
+            "radioInstalled": "Installed radio firmware",
+            "radioRequired": "Required"
+        }
     },
-    "ne": {
-      "descEth": "Ethernet",
-      "dhcp": "DHCP",
-      "ip": "IP",
-      "mask": "Subnet",
-      "gw": "Gateway",
-      "dns": "DNS",
-      "descWifi": "Wi-Fi",
-      "wifi": {
-        "btn": {
-          "scan": "Scan for Wi-Fi networks",
-          "man": "Enter manually"
-        },
-        "rssi": "RSSI",
-        "ssid": "SSID",
-        "sc": "Security",
-        "ch": "Channel",
-        "nnf": "WiFi networks not found",
+    "c": {
+        "user": "Username",
+        "pass": "Password",
+        "save": "Save",
+        "enable": "Enable",
+        "en": "Enabled",
+        "dis": "Disabled",
+        "cancel": "Cancel",
+        "sure": "I'm sure",
+        "ltr": "Later",
+        "drm": "Don't remind",
+        "err": "Error",
+        "ok": "OK",
+        "now": "Install now",
         "mode": "Mode",
-        "power": "Tx Power"
-      },
-      "wvi": {
-        "title": "Attention",
-        "1": "We strongly advise against using Wi-Fi in ZigBee operation. Serial communication over Wi-Fi is not robust enough and does not contain any error correction mechanisms to compensate for fluctuating connections or packet loss. The same applies to WAN and VPN connections. See also:",
-        "2": "When used as a Thread Border Router (currently under development), this problem does not occur."
-      }
+        "cst": "Status",
+        "csp": "Speed",
+        "mac": "MAC",
+        "conn": "Connected",
+        "connecting": "Connecting",
+        "disconn": "Disconnected",
+        "init": "Initialized",
+        "host": "Hostname",
+        "inst": "Install",
+        "cc": "Copy to clipboard",
+        "erss": "Error saving settings. Check your network",
+        "ercn": "Error. Check your network",
+        "proj": "Created with ❤️ by",
+        "projb": "based on",
+        "nc": "No connection",
+        "cl": "Close",
+        "t": {
+            "e": "End time",
+            "s": "Start time"
+        },
+        "cerp": "Events reconnection max retries reached. Refresh page to continue."
     },
-    "zi": {
-      "so": "Serial settings",
-      "ss": "Speed",
-      "sp": "Port",
-      "cfg": {
-        "tt": "Configuration generator",
-        "sel": "Generate for",
-        "alarm": "CZC is operating in access point mode (IP 192.168.1.1). The IP address will change after connecting to Ethernet or Wi-Fi, after which you will need to regenerate the configuration.",
-        "ss": "Serial settings",
-        "lxzg": "Location of CZC",
-        "dzl": "Disable Zigbee led?",
-        "sopm": "Set output power to max 20",
-        "ha": "For Home Assistant: Go to \"Settings\"→\"System\"→\"Hardware\"→Select the 3 dot menu in the upper right corner→\"All Hardware\"→Scroll to ttyUSB and find your adapter→Copy Device path like \"/dev/ttyUSB0\"",
-        "lin": "List of USB devices in Linux: ls  /dev/ttyUSB*",
-        "dp": "INSERT_DEVICE_PATH_HERE",
-        "zrci": "No further configuration is required in router mode."
-      },
-      "fws": {
-        "tt": "Device Role",
-        "alarm": "Changing the firmware while the network is running will lead to its destruction!"
-      }
+    "md": {
+        "esp": {
+            "rst": {
+                "tt": "RESTART DEVICE",
+                "msg": "Waiting for reboot. Will close automatically.",
+                "nrps": "No response; check if IP or USB mode changed."
+            },
+            "fr": {
+                "tt": "FACTORY RESET WARNING",
+                "msg": "This will erase ALL settings."
+            },
+            "fu": {
+                "tt": "CZC FIRMWARE UPDATE",
+                "lfm": "Updating from local file.",
+                "gvm": "Updating to {{ver}} GitHub release.",
+                "glm": "Updating to latest GitHub release.",
+                "wm": "It will disconnect ALL socket connections",
+                "wdm": "Waiting for device...",
+                "fri": "Fetching firmware info...",
+                "lgds": "Downloading latest GitHub release...",
+                "vgds": "Downloading release {{ver}} from GitHub...",
+                "ucr": "Update complete! Rebooting!",
+                "prgs": "Update: {{per}}%",
+                "dwnl": "Downloading firmware: {{per}} %",
+                "flsh": "Updating firmware: {{per}} %",
+                "gvt": "GitHub releases",
+                "checking": "Connection interrupted. Checking update and waiting for CZC to restart…",
+                "failed": "Firmware update was not confirmed. Check the connection and device log.",
+                "errors": {
+                    "reconnect_timeout": "CZC did not return within 90 seconds. Check its address and refresh this page; the update outcome is unconfirmed.",
+                    "invalid_response": "Unexpected response from CZC. Update completion is unconfirmed.",
+                    "status_unavailable": "Cannot contact CZC before the update. Check the connection and try again.",
+                    "invalid_size": "Select a non-empty ESP32 OTA BIN file.",
+                    "missing_file": "No firmware file received.",
+                    "unexpected_file": "Select only one firmware file.",
+                    "ota_begin_failed": "Cannot start the update. Check the OTA BIN size and available memory.",
+                    "ota_write_failed": "Writing the firmware failed. Check the device log and try again.",
+                    "ota_incomplete_or_invalid": "The firmware is incomplete or invalid. Select the ESP32 OTA BIN and try again.",
+                    "upload_aborted": "File upload was interrupted. Try again.",
+                    "download_failed": "Firmware download failed. Check the URL and connection.",
+                    "radio_busy": "The device is busy updating the radio. Wait for it to finish.",
+                    "restart_pending": "Update completed; the device is restarting."
+                }
+            },
+            "ws": {
+                "tt": "Wi-Fi network connection",
+                "msg": "Connecting to the network in progress... Wait for the result.",
+                "nip": "New IP address is {{ip}} Device will now reboot for the new settings to take effect.",
+                "btn": "Go to",
+                "err": "Connection error, check SSID, PASSWORD and try again"
+            },
+            "mc": {
+                "tt": "Select your device model",
+                "mi": "More than one device with exactly your configuration is supported. You need to select your device."
+            }
+        },
+        "zb": {
+            "fu": {},
+            "dtc": "Coordinator",
+            "dtr": "Router",
+            "efr": "Error while retrieving firmware information<br>Check the network!",
+            "ncf": "The coordinator firmware is missing.",
+            "nrf": "The router firmware is missing.",
+            "ot": "Zigbee firmware update",
+            "rfm": "Getting information about the firmware...",
+            "ntf": "The Thread firmware is missing.",
+            "dtt": "OpenThread",
+            "cte": "Click to expand info",
+            "ccn": "You can't update while Clients (Zigbee2MQTT, Home Assistant, etc.) are connected!"
+        },
+        "ss": {
+            "tt": "SETTINGS SAVED",
+            "rr": "Some settings require a reboot.",
+            "msg": "New parameters saved.",
+            "rn": "Restart now",
+            "rl": "Restart manually later"
+        },
+        "kw": {
+            "msg": "This function allows you to leave one of the communication channels active and have access to the web interface. The device itself will select an available channel according to priority: WIFI, ETHERNET, WIFI AP"
+        },
+        "zg": {
+            "fu": {
+                "f": "Going to flash: {{file}}",
+                "fn": "The firmware was successfully installed!",
+                "nv": "New version: {{ver}}",
+                "st": "Zigbee firmware - download is starting...",
+                "stf": "ZigBee firmware - flash is starting...",
+                "er": "Erase finished",
+                "upload": "Uploading file to CZC: {{per}} %",
+                "verify": "Verifying written firmware…"
+            },
+            "errors": {
+                "incomplete_upload": "Stored BIN size differs from the upload size. The radio was not erased.",
+                "radio_flash_unknown": "Radio flash size is unknown. Check radio information in the UI.",
+                "radio_image_too_large": "The BIN exceeds radio flash capacity. Check the radio model.",
+                "radio_image_invalid": "Invalid radio BIN size or header. Do not select an ESP32 image.",
+                "storage_error": "Cannot open the temporary file on the ESP32.",
+                "storage_write_failed": "Cannot save the complete BIN to the ESP32 filesystem.",
+                "radio_busy": "UART is unavailable while another maintenance operation is running.",
+                "radio_bin_required": "Select a radio firmware .bin file.",
+                "one_file_required": "Upload only one BIN per request.",
+                "missing_file": "No complete file upload in the request.",
+                "upload_aborted": "Connection lost before upload completion. The radio was not erased.",
+                "authentication_required": "Sign in to the web UI again.",
+                "reload_page": "Reload the page before retrying: the session token has expired.",
+                "image_open_failed": "Cannot open the saved BIN for flashing.",
+                "image_read_failed": "Cannot read the BIN while flashing the radio.",
+                "image_truncated": "The BIN ended before all radio bytes were written.",
+                "radio_erase_failed": "The radio BSL did not acknowledge flash erase.",
+                "radio_begin_failed": "The radio BSL rejected the start of flash programming.",
+                "radio_write_failed": "The radio BSL did not acknowledge a BIN block.",
+                "flash_failed": "Radio flashing failed; the server supplied no further reason.",
+                "network_error": "No response from CZC. Check connectivity; flash outcome is unknown.",
+                "invalid_response": "Unexpected CZC response. Flash completion is unconfirmed.",
+                "radio_verify_failed": "Written firmware verification failed. Retry the BIN; BSL details are shown below."
+            }
+        }
     },
-    "mq": {
-      "enb": "Enable this to activate MQTT settings",
-      "desc": "Settings",
-      "broker": {
-        "n": "Server",
-        "ph": "Domain name or IP address",
-        "tt": "Enter valid domain or IP"
-      },
-      "port": {
-        "n": "Port",
-        "ph": "MQTT port number",
-        "tt": "Enter the port number (usually 1883)"
-      },
-      "topic": {
-        "n": "Topic",
-        "ph": "MQTT topic",
-        "tt": "Enter the MQTT topic of device X/Y/Z or X/Y or X. No spaces."
-      },
-      "interval": {
-        "n": "Interval",
-        "ph": "Update interval in seconds",
-        "tt": "Enter how often to send updates (in seconds)"
-      },
-      "disc": {
-        "n": "Home Assistant (MQTT Discovery)",
-        "ph": "Enable or disable",
-        "tt": "💡 Enable this for Home Assistant MQTT discovery feature"
-      },
-      "user": {
-        "ph": "Username",
-        "tt": "Enter username from your MQTT server"
-      },
-      "pass": {
-        "ph": "Password",
-        "tt": "Enter password from your MQTT server"
-      },
-      "reconnect": {
-        "n": "Reconnect",
-        "ph": "Reconnect interval in seconds",
-        "tt": "Enter fast try to reconnect MQTT server (in seconds)"
-      }
+    "ts": {
+        "esp": {
+            "upd": {
+                "tt": "ESP32 update available 🚀",
+                "msg": "New firmware ({{ver}}) was found on GitHub. It was downloaded {{count}} times."
+            },
+            "beta": {
+                "tt": "FW beta feedback",
+                "msg": "Thanks for testing new version! 🎢\nDon't forget to give feedback 💌",
+                "cnt": "Contact 🧧"
+            },
+            "ane": {
+                "tt": "Network Config Error",
+                "msg": "No network interfaces are enabled. Please activate at least one interface to continue."
+            }
+        },
+        "zb": {
+            "nzfa": {
+                "tt": "No firmware found"
+            },
+            "upd": {
+                "tt": "New Zigbee firmware found 🌟",
+                "msg": "A newer version of firmware for the Zigbee module has been found."
+            }
+        }
     },
-    "vp": {
-      "wg": {
-        "tt": "WireGuard Interface Settings",
-        "lip": "IP address of the local interface",
-        "lpk": "Private key of the local interface",
-        "ea": "Address of the endpoint peer",
-        "epk": "Public key of the endpoint peer",
-        "ep": "Port of the endpoint peer",
-        "lsn": "Local Subnet",
-        "lgw": "Local Gateway",
-        "aip": "Allowed IPs",
-        "am": "Allowed Subnet",
-        "md": "Make default",
-        "psk": "Pre-shared key",
-        "lp": "Local port"
-      },
-      "hn": {
-        "tt": "Husarnet config (in develope)",
-        "jc": "Join Code for your network",
-        "hn": "Host name for your device",
-        "du": "Dashboard URL (leave 'default')"
-      }
-    },
-    "se": {
-      "desc": "Settings",
-      "web": {
-        "dis": "Disable web server when establishing Zigbee socket connection",
-        "auth": "Enable web server authentication"
-      },
-      "fw": {
-        "desc": "IP whitelist for Zigbee socket connection",
-        "ip": "Allowed IP"
-      }
-    },
-    "to": {
-      "sc": "System",
-      "fu": "Firmware",
-      "dt": "Debug",
-      "mc": "Modules control",
-      "zb": "Zigbee",
-      "rst": "Restart",
-      "fm": "Flash Mode",
-      "rr": "Router Reconnect",
-      "esp": "ESP32",
-      "fr": "Factory reset",
-      "csc": "Peripherals control",
-      "ms": "Mode select",
-      "ntw": "Network",
-      "usb": "USB",
-      "lt": "LEDs toggle",
-      "ls": "starting...",
-      "lb": "blinking...",
-      "pwr": "Power",
-      "mode": "Mode",
-      "dc": "Console",
-      "rd": "Raw data ",
-      "cc": "Clear",
-      "czc": "Check Zigbee connect",
-      "czv": "Check Zigbee version",
-      "fb": "File Browser",
-      "fn": "Filename",
-      "s": "Size",
-      "egu": "ESP32",
-      "efu": "ESP32 manual flashing",
-      "cf": "Select firmware file...",
-      "ilfg": "Install latest",
-      "zu": "Zigbee update (in develop)",
-      "saf": "Show available...",
-      "zgu": "Zigbee",
-      "eznr": "Erase NVRAM",
-      "ulcc": "Unlearn ZigBee Router"
-    },
-    "lo": {
-      "pt": "Login - CZC",
-      "lbl": "Please sign in",
-      "btn": "Sign in",
-      "mnl": "Need to login",
-      "mwc": "Wrong credentials",
-      "mlo": "Logged out success"
-    },
-    "ab": {
-      "l1": "CZC Firmware unifies the best innovations from",
-      "l2": "previous Zigbee gateway projects into a single, comprehensive solution.",
-      "l3": "By focusing the community's efforts on enhancing one product, CZC aims to streamline development, thereby improving the capabilities and efficiency of your Zigbee Gateways. 🌍",
-      "w": {
-        "t": "Wiki",
-        "m": "To learn more about the CZC firmware project, visit our: 📘",
-        "l": "Official Wiki"
-      },
-      "f": {
-        "t": "Feedback",
-        "m": "If you have any ideas, suggestions, or wish to help in other ways, please don't hesitate to: 📬",
-        "l": "Contact the author"
-      },
-      "s": {
-        "m": "Support this project through one of the following ways: 💖",
-        "t": "Support"
-      },
-      "c": {
-        "t": "Contribute",
-        "m": "Join us in improving translating, enhancing documentation, or coding new features. 💻",
-        "l": "Project Repository"
-      },
-      "r": {
-        "t": "Report",
-        "m": "To report a bug or request a feature, please: 🐞",
-        "l": "Open an Issue"
-      },
-      "cm": {
-        "m": "Your insights, feedback, and collaboration are invaluable to us 🤝",
-        "t": "Community",
-        "l": "Join Telegram group",
-        "d": "Join Discord community"
-      }
+    "cl": {
+        "d": "Documentation",
+        "g": "Github",
+        "c": "Contact",
+        "m": "Mastodon",
+        "b": "Bluesky"
     }
-  },
-  "c": {
-    "user": "Username",
-    "pass": "Password",
-    "save": "Save",
-    "enable": "Enable",
-    "en": "Enabled",
-    "dis": "Disabled",
-    "cancel": "Cancel",
-    "sure": "I'm sure",
-    "ltr": "Later",
-    "drm": "Don't remind",
-    "err": "Error",
-    "ok": "OK",
-    "now": "Install now",
-    "mode": "Mode",
-    "cst": "Status",
-    "csp": "Speed",
-    "mac": "MAC",
-    "conn": "Connected",
-    "connecting": "Connecting",
-    "disconn": "Disconnected",
-    "init": "Initialized",
-    "host": "Hostname",
-    "inst": "Install",
-    "cc": "Copy to clipboard",
-    "erss": "Error saving settings. Check your network",
-    "ercn": "Error. Check your network",
-    "proj": "Created with ❤️ by",
-    "projb": "based on",
-    "nc": "No connection",
-    "cl": "Close",
-    "t": {
-      "e": "End time",
-      "s": "Start time"
-    },
-    "cerp": "Events reconnection max retries reached. Refresh page to continue."
-  },
-  "md": {
-    "esp": {
-      "rst": {
-        "tt": "RESTART DEVICE",
-        "msg": "Waiting for reboot. Will close automatically.",
-        "nrps": "No response; check if IP or USB mode changed."
-      },
-      "fr": {
-        "tt": "FACTORY RESET WARNING",
-        "msg": "This will erase ALL settings."
-      },
-      "fu": {
-        "tt": "CZC FIRMWARE UPDATE",
-        "lfm": "Updating from local file.",
-        "gvm": "Updating to {{ver}} GitHub release.",
-        "glm": "Updating to latest GitHub release.",
-        "wm": "It will disconnect ALL socket connections",
-        "wdm": "Waiting for device...",
-        "fri": "Fetching firmware info...",
-        "lgds": "Downloading latest GitHub release...",
-        "vgds": "Downloading release {{ver}} from GitHub...",
-        "ucr": "Update complete! Rebooting!",
-        "prgs": "Update: {{per}}%",
-        "dwnl": "Downloading firmware: {{per}} %",
-        "flsh": "Updating firmware: {{per}} %",
-        "gvt": "GitHub releases"
-      },
-      "ws": {
-        "tt": "Wi-Fi network connection",
-        "msg": "Connecting to the network in progress... Wait for the result.",
-        "nip": "New IP address is {{ip}} Device will now reboot for the new settings to take effect.",
-        "btn": "Go to",
-        "err": "Connection error, check SSID, PASSWORD and try again"
-      },
-      "mc": {
-        "tt": "Select your device model",
-        "mi": "More than one device with exactly your configuration is supported. You need to select your device."
-      }
-    },
-    "zb": {
-      "fu": {},
-      "dtc": "Coordinator",
-      "dtr": "Router",
-      "efr": "Error while retrieving firmware information<br>Check the network!",
-      "ncf": "The coordinator firmware is missing.",
-      "nrf": "The router firmware is missing.",
-      "ot": "Zigbee OTA update",
-      "rfm": "Getting information about the firmware...",
-      "ntf": "The Thread firmware is missing.",
-      "dtt": "OpenThread",
-      "cte": "Click to expand info",
-      "ccn": "You can't update while Clients (Zigbee2MQTT, Home Assistant, etc.) are connected!"
-    },
-    "ss": {
-      "tt": "SETTINGS SAVED",
-      "rr": "Some settings require a reboot.",
-      "msg": "New parameters saved.",
-      "rn": "Restart now",
-      "rl": "Restart manually later"
-    },
-    "kw": {
-      "msg": "This function allows you to leave one of the communication channels active and have access to the web interface. The device itself will select an available channel according to priority: WIFI, ETHERNET, WIFI AP"
-    },
-    "zg": {
-      "fu": {
-        "f": "Going to flash: {{file}}",
-        "fn": "The firmware was successfully installed!",
-        "nv": "New version: {{ver}}",
-        "st": "Zigbee firmware - download is starting...",
-        "stf": "ZigBee firmware - flash is starting...",
-        "er": "Erase finished"
-      }
-    }
-  },
-  "ts": {
-    "esp": {
-      "upd": {
-        "tt": "ESP32 update available 🚀",
-        "msg": "New firmware ({{ver}}) was found on GitHub. It was downloaded {{count}} times."
-      },
-      "beta": {
-        "tt": "FW beta feedback",
-        "msg": "Thanks for testing new version! 🎢\nDon't forget to give feedback 💌",
-        "cnt": "Contact 🧧"
-      },
-      "ane": {
-        "tt": "Network Config Error",
-        "msg": "No network interfaces are enabled. Please activate at least one interface to continue."
-      }
-    },
-    "zb": {
-      "nzfa": {
-        "tt": "No firmware found"
-      },
-      "upd": {
-        "tt": "New Zigbee firmware found 🌟",
-        "msg": "A newer version of firmware for the Zigbee module has been found."
-      }
-    }
-  },
-  "cl": {
-    "d": "Documentation",
-    "g": "Github",
-    "c": "Contact",
-    "m": "Mastodon",
-    "b": "Bluesky"
-  }
 }

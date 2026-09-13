@@ -7,9 +7,15 @@
 #include <CCTools.h>
 #include <esp_task_wdt.h>
 #include <CronAlarms.h>
+#include <freertos/queue.h>
+#include <new>
+#include <esp_netif.h>
+#include "memory_status.h"
+#include "network_ipv4.h"
 // #include <Husarnet.h> //not available now
 
 #include "config.h"
+#include "czc_backhaul.h"
 #include "web.h"
 #include "log.h"
 #include "etc.h"
@@ -220,6 +226,8 @@ float getCPUtemp(bool clear)
 
 void zigbeeRouterRejoin()
 {
+  BackhaulMaintenance maintenance;
+  if (!maintenance) { printLogMsg("[ZB] UART busy; operation cancelled"); return; }
   printLogMsg("Router rejoin begin");
   CCTool.routerRejoin();
   printLogMsg("Router in join mode!");
@@ -227,8 +235,11 @@ void zigbeeRouterRejoin()
 
 void zigbeeEnableBSL()
 {
+  BackhaulMaintenance maintenance;
+  if (!maintenance) { printLogMsg("[ZB] UART busy; operation cancelled"); return; }
   printLogMsg("ZB enable BSL");
   CCTool.enterBSL();
+  backhaulBslHold(true);
   printLogMsg("Now you can flash CC2652!");
   if (systemCfg.workMode == WORK_MODE_USB)
   {
@@ -239,8 +250,11 @@ void zigbeeEnableBSL()
 
 void zigbeeRestart()
 {
+  BackhaulMaintenance maintenance;
+  if (!maintenance) { printLogMsg("[ZB] UART busy; operation cancelled"); return; }
   printLogMsg("ZB RST begin");
   CCTool.restart();
+  backhaulBslHold(false);
   printLogMsg("ZB restart was done");
   if (systemCfg.workMode == WORK_MODE_USB)
   {
@@ -445,88 +459,39 @@ void nmDeactivate()
   setLedsDisable();
 }
 
+// DNS repair must not call WiFi/ETH.config: those also stop DHCP and set IP.
+static bool restoreNetworkDns(const char *key, IPAddress address)
+{
+  esp_netif_t *netif=esp_netif_get_handle_from_ifkey(key);
+  if (!netif || !esp_netif_is_netif_up(netif) || !ipv4Assigned(uint32_t(address))) return false;
+  esp_netif_dns_info_t dns{};
+  dns.ip.type=ESP_IPADDR_TYPE_V4;
+  dns.ip.u_addr.ip4.addr=uint32_t(address);
+  return esp_netif_set_dns_info(netif, ESP_NETIF_DNS_MAIN, &dns)==ESP_OK;
+}
+
 bool checkDNS(bool setup)
 {
-  const char *wifiKey = "WiFi";
-  const char *ethKey = "ETH";
-  const char *savedKey = "Saved";
-  const char *restoredKey = "Restored";
-  const char *dnsTagKey = "[DNS]";
-  char buffer[100];
-
+  auto check=[&](const char *key, const char *label, bool connected, IPAddress current, IPAddress &saved) {
+    if (!connected || current==saved) return;
+    const char *action=nullptr;
+    if (ipv4Assigned(uint32_t(current))) {
+      // A new valid DHCP resolver wins over the cached one, including when
+      // Ethernet and Wi-Fi share the SDK's DNS table. Do not rewrite it.
+      if (setup) { saved=current; action="Saved"; }
+    } else if (ipv4Assigned(uint32_t(saved)) && restoreNetworkDns(key,saved)) {
+      action="Restored";
+    }
+    if (action) {
+      char buffer[100];
+      snprintf(buffer,sizeof(buffer),"[DNS] %s %s - %s",action,label,saved.toString().c_str());
+      printLogMsg(buffer);
+    }
+  };
   if (networkCfg.wifiEnable)
-  {
-    IPAddress currentWifiDNS = WiFi.dnsIP();
-    if (currentWifiDNS != vars.savedWifiDNS)
-    {
-      char dnsStrW[16];
-      snprintf(dnsStrW, sizeof(dnsStrW), "%u.%u.%u.%u", currentWifiDNS[0], currentWifiDNS[1], currentWifiDNS[2], currentWifiDNS[3]);
-
-      int lastDot = -1;
-      for (int i = 0; dnsStrW[i] != '\0'; i++)
-      {
-        if (dnsStrW[i] == '.')
-        {
-          lastDot = i;
-        }
-      }
-
-      int fourthPartW = atoi(dnsStrW + lastDot + 1);
-
-      if (setup && fourthPartW != 0)
-      {
-        vars.savedWifiDNS = currentWifiDNS;
-        snprintf(buffer, sizeof(buffer), "%s %s %s - %s", dnsTagKey, savedKey, wifiKey, dnsStrW);
-        printLogMsg(buffer);
-      }
-      else
-      {
-        if (vars.savedWifiDNS)
-        {
-          WiFi.config(WiFi.localIP(), WiFi.gatewayIP(), WiFi.subnetMask(), vars.savedWifiDNS);
-          snprintf(buffer, sizeof(buffer), "%s %s %s - %s", dnsTagKey, restoredKey, wifiKey, vars.savedWifiDNS.toString().c_str());
-          printLogMsg(buffer);
-        }
-      }
-    }
-  }
-
+    check("WIFI_STA_DEF","WiFi",WiFi.status()==WL_CONNECTED,WiFi.dnsIP(),vars.savedWifiDNS);
   if (networkCfg.ethEnable)
-  {
-    IPAddress currentEthDNS = ETH.dnsIP();
-    if (currentEthDNS != vars.savedEthDNS)
-    {
-      char dnsStrE[16];
-      snprintf(dnsStrE, sizeof(dnsStrE), "%u.%u.%u.%u", currentEthDNS[0], currentEthDNS[1], currentEthDNS[2], currentEthDNS[3]);
-
-      int lastDot = -1;
-      for (int i = 0; dnsStrE[i] != '\0'; i++)
-      {
-        if (dnsStrE[i] == '.')
-        {
-          lastDot = i;
-        }
-      }
-
-      int fourthPartE = atoi(dnsStrE + lastDot + 1);
-
-      if (setup && fourthPartE != 0)
-      {
-        vars.savedEthDNS = currentEthDNS;
-        snprintf(buffer, sizeof(buffer), "%s %s %s - %s", dnsTagKey, savedKey, ethKey, dnsStrE);
-        printLogMsg(buffer);
-      }
-      else
-      {
-        if (vars.savedEthDNS)
-        {
-          ETH.config(ETH.localIP(), ETH.gatewayIP(), ETH.subnetMask(), vars.savedEthDNS);
-          snprintf(buffer, sizeof(buffer), "%s %s %s - %s", dnsTagKey, restoredKey, ethKey, vars.savedEthDNS.toString().c_str());
-          printLogMsg(buffer);
-        }
-      }
-    }
-  }
+    check("ETH_DEF","ETH",ETH.linkUp(),ETH.dnsIP(),vars.savedEthDNS);
   return true;
 }
 
@@ -892,8 +857,63 @@ int compareVersions(String v1, String v2)
   return v1_suffix.compareTo(v2_suffix);
 }
 
+// Only the worker performs internet I/O. Flags, logs and automatic installation
+// stay on the original UI task, so unavailable DNS/HTTPS cannot stall WebServer.
+struct UpdateCheckResult { String esp,zb; };
+static QueueHandle_t updateCheckResults=nullptr;
+static bool updateCheckRunning=false;
+static bool updateCheckDeferred=false;
+static uint32_t updateCheckDeferredAt=0;
+static void updateCheckTask(void *arg)
+{
+  auto *result=static_cast<UpdateCheckResult *>(arg);
+  result->esp=fetchLatestEspFw(false);
+  result->zb=fetchLatestZbFw(false);
+  xQueueSend(updateCheckResults,&result,portMAX_DELAY);
+  vTaskDelete(nullptr);
+}
+
 void checkUpdateAvail()
 {
+  if(vars.apStarted || vars.zbFlashing || updateCheckRunning) return;
+  auto memory=memoryBudget();
+  if(!memory.backgroundHttps()) {
+    if(!updateCheckDeferred) {
+      char line[128];
+      snprintf(line,sizeof(line),"[UPD_CHK] Deferred: heap=%lu largest=%lu; keeping RAM for UI/TLS",
+               static_cast<unsigned long>(memory.free),static_cast<unsigned long>(memory.largest));
+      printLogMsg(line);
+    }
+    updateCheckDeferred=true; updateCheckDeferredAt=millis(); return;
+  }
+  updateCheckDeferred=false;
+  if(!updateCheckResults) updateCheckResults=xQueueCreate(1,sizeof(UpdateCheckResult *));
+  if(!updateCheckResults) return;
+  auto *result=new(std::nothrow) UpdateCheckResult;
+  if(!result) return;
+  checkDNS();
+  updateCheckRunning=true;
+  if(xTaskCreatePinnedToCore(updateCheckTask,"update-check",8192,result,1,nullptr,0)!=pdPASS) {
+    updateCheckRunning=false; delete result;
+    updateCheckDeferred=true; updateCheckDeferredAt=millis();
+    memory=memoryBudget(); char line[112];
+    snprintf(line,sizeof(line),"[UPD_CHK] Cannot start background check: heap=%lu largest=%lu",
+             static_cast<unsigned long>(memory.free),static_cast<unsigned long>(memory.largest));
+    printLogMsg(line);
+  }
+}
+
+void updateCheckLoop()
+{
+  if(updateCheckDeferred && uint32_t(millis()-updateCheckDeferredAt)>=60000) {
+    updateCheckDeferredAt=millis(); checkUpdateAvail();
+  }
+  if(!updateCheckResults || vars.zbFlashing) return;
+  UpdateCheckResult *result=nullptr;
+  if(xQueueReceive(updateCheckResults,&result,0)!=pdTRUE) return;
+  updateCheckRunning=false;
+  String latestReleaseUrlEsp=result->esp, latestReleaseUrlZb=result->zb;
+  delete result;
   if (!vars.apStarted)
   {
     const char *ESPkey = "ESP";
@@ -901,8 +921,6 @@ void checkUpdateAvail()
     const char *FoundKey = "Found ";
     const char *NewFwKey = " new fw: ";
     const char *TryKey = "try to install";
-    String latestReleaseUrlEsp = fetchLatestEspFw();
-    String latestReleaseUrlZb = fetchLatestZbFw();
     String latestVersionEsp = extractVersionFromURL(latestReleaseUrlEsp);
     String latestVersionZb = extractVersionFromURL(latestReleaseUrlZb);
 
@@ -918,7 +936,7 @@ void checkUpdateAvail()
     {
       vars.updateEspAvail = true;
       printLogMsg(String(FoundKey) + String(ESPkey) + String(NewFwKey) + latestVersionEsp);
-      if (systemCfg.updAutoInst)
+      if (systemCfg.updAutoInst && !backhaulConfigured())
       {
         printLogMsg(String(TryKey));
         getEspUpdate(latestReleaseUrlEsp);
@@ -933,7 +951,7 @@ void checkUpdateAvail()
     {
       vars.updateZbAvail = true;
       printLogMsg(String(FoundKey) + String(ZBkey) + String(NewFwKey) + latestVersionZb);
-      if (systemCfg.updAutoInst)
+      if (systemCfg.updAutoInst && !backhaulConfigured())
       {
         printLogMsg(String(TryKey));
         const char* zigbee_firmware_path= "/zigbee/firmware.bin";

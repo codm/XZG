@@ -10,9 +10,15 @@
 #include <WiFi.h>
 #include <Ticker.h>
 #include <CCTools.h>
+#include <lwip/sockets.h>
+#include <atomic>
 
 #include "config.h"
+#include "czc_backhaul.h"
+#include "network_status.h"
+#include "memory_status.h"
 #include "web.h"
+#include "web_refresh.h"
 #include "log.h"
 #include "etc.h"
 #include "zb.h"
@@ -83,6 +89,27 @@ bool wifiWebSetupInProgress = false;
 bool eventOK = false;
 
 SemaphoreHandle_t sendEventMutex;
+static std::atomic<uint32_t> eventDrops{0};
+static const char *espUpdateState="idle",*espUpdateError="";
+static uint32_t espUpdateRestartAt=0;
+static bool espUploadHeld=false,espUploadSeen=false,espUploadReady=false,espUploadStarted=false;
+static size_t espUploadExpected=0,espUploadReceived=0;
+static void failEspUpdate(const char *reason) {
+    Update.abort(); espUpdateState="failed"; espUpdateError=reason;
+    sendEventSafe("esp.fi","failed");
+}
+static void completeEspUpdate() {
+    espUpdateState="restarting"; espUpdateError="";
+    sendEventSafe(tagESP_FW_prgs,"100"); sendEventSafe("esp.fi","restarting");
+    espUpdateRestartAt=millis()+2000;
+}
+void espUpdateLoop() {
+    // Give the HTTP result time to reach the browser; never reboot inside the
+    // multipart callback, before WebServer can send its completion response.
+    if(espUpdateRestartAt && static_cast<int32_t>(millis()-espUpdateRestartAt)>=0) {
+        espUpdateRestartAt=0; ESP.restart();
+    }
+}
 
 // API strings
 const char *argAction          = "action";
@@ -207,8 +234,13 @@ void handleLoader()
     sendGzip(contTypeTextHtml, PAGE_LOADER_html_gz, PAGE_LOADER_html_gz_len);
 }
 
+void registerRadioUpload(WebServer &server);
 void initWebServer()
 {
+    // Network/AP recovery can call startServers() again. Keep the existing
+    // route list and mutex instead of leaking handlers or replacing a live lock.
+    static bool initialized=false;
+    if(initialized) return;
     /* ----- LANG FILES | START -----*/
     serverWeb.on("/lg/en.json", []()
                  { sendGzip(contTypeJson, en_json_gz, en_json_gz_len); });
@@ -288,6 +320,14 @@ void initWebServer()
     serverWeb.on("/saveFile", handleSavefile);
 
     serverWeb.on("/api", handleApi);
+    serverWeb.on("/api/network/status", HTTP_GET, []() {
+        if(!is_authenticated()) { serverWeb.send(401); return; }
+        serverWeb.sendHeader("Cache-Control", "no-store");
+        DynamicJsonDocument doc(2048);
+        networkStatus(doc.to<JsonObject>());
+        String body; serializeJson(doc,body);
+        serverWeb.send(200,"application/json",body);
+    });
 
     serverWeb.on("/events", handleEvents);
     /* ----- MIST CMDs | END -----*/
@@ -295,11 +335,26 @@ void initWebServer()
     /* ----- OTA | START -----*/
 
     serverWeb.on("/update", HTTP_POST, handleUpdateRequest, handleEspUpdateUpload);
+    serverWeb.on("/api/esp-update",HTTP_GET,[]() {
+        if(!is_authenticated()) { serverWeb.send(401); return; }
+        static const String boot=String(esp_random(),HEX)+"-"+String(esp_random(),HEX);
+        serverWeb.sendHeader("Cache-Control","no-store");
+        StaticJsonDocument<512> doc; doc["boot"]=boot; doc["version"]=VERSION;
+        doc["state"]=espUpdateState; doc["error"]=espUpdateError;
+        memoryStatus(doc.createNestedObject("heap"));
+        doc["wifi_connected"]=WiFi.status()==WL_CONNECTED;
+        if(WiFi.status()==WL_CONNECTED) doc["wifi_rssi"]=WiFi.RSSI();
+        doc["ui_refresh_s"]=webRefreshSeconds(systemCfg.refreshLogs);
+        doc["ui_events_dropped"]=eventDrops.load();
+        String body; serializeJson(doc,body); serverWeb.send(200,contTypeJson,body);
+    });
     // serverWeb.on("/updateZB", HTTP_POST, handleUpdateRequest, handleZbUpdateUpload);
 
     /* ----- OTA | END -----*/
 
-    const char       *headerkeys[]   = {"Content-Length", "Cookie"};
+    backhaulWebRoutes(serverWeb);
+    registerRadioUpload(serverWeb);
+    const char       *headerkeys[]   = {"Content-Length", "Cookie", "X-Backhaul-Token"};
     constexpr size_t  headerkeyssize = sizeof(headerkeys) / sizeof(char *);
     sendEventMutex = xSemaphoreCreateMutex();
     if(sendEventMutex == NULL) {
@@ -307,6 +362,7 @@ void initWebServer()
     }
     serverWeb.collectHeaders(headerkeys, headerkeyssize);
     serverWeb.begin();
+    initialized=true;
     LOGD("done");
 }
 
@@ -374,102 +430,120 @@ void handleNotFound()
 
 void handleUpdateRequest()
 {
-    serverWeb.sendHeader ("Connection",
-                          "close");
-    serverWeb.send       (HTTP_CODE_OK,
-                          contTypeText,
-                          "Upload OK. Try to flash...");
+    if(!is_authenticated()) { serverWeb.send(401); return; }
+    // Validate only after the complete multipart request, not its first file.
+    bool complete=espUploadStarted && espUploadReady && espUploadReceived &&
+        (!espUploadExpected || espUploadReceived==espUploadExpected) && Update.end(!espUploadExpected);
+    if(!complete && espUploadSeen && !*espUpdateError) failEspUpdate("ota_incomplete_or_invalid");
+    serverWeb.sendHeader("Connection","close");
+    StaticJsonDocument<192> doc;
+    doc["result"]=complete ? "esp_updated" : *espUpdateError ? espUpdateError : "missing_file";
+    String body; serializeJson(doc,body);
+    serverWeb.send(complete ? 200 : 400,contTypeJson,body);
+    if(complete) completeEspUpdate();
+    else if(espUploadHeld) { backhaulMaintenanceEnd(); espUploadHeld=false; }
+    espUploadSeen=espUploadReady=espUploadStarted=false;
 }
 
 void handleEspUpdateUpload()
 {
-    if (!is_authenticated())
+    if(!is_authenticated()) return;
+    HTTPUpload &upload=serverWeb.upload();
+    if(upload.status==UPLOAD_FILE_START)
     {
-        return;
-    }
-
-    HTTPUpload &upload = serverWeb.upload();
-    static long contentLength = 0;
-    if (upload.status == UPLOAD_FILE_START)
-    {
-        contentLength = serverWeb.header("Content-Length").toInt();
-        LOGD ("hostHeader: %s",
-              serverWeb.hostHeader());
-        LOGD ("contentLength: %s",
-              String(contentLength));
-        LOGD ("Update ESP from file %s size: %s",
-              String(upload.filename.c_str()),
-              String(upload.totalSize));
-        LOGD ("upload.currentSize %s",
-              String(upload.currentSize));
-        if (!Update.begin(contentLength))
-        {
-            Update.printError(Serial);
+        if(espUpdateRestartAt) { espUpdateError="restart_pending"; return; }
+        if(espUploadSeen) {
+            failEspUpdate("unexpected_file"); espUploadStarted=false; return;
         }
+        espUploadSeen=true; espUploadReady=false; espUploadReceived=0;
+        espUpdateState="uploading"; espUpdateError="";
+        espUploadExpected=0;
+        if(serverWeb.hasArg("size")) {
+            String size=serverWeb.arg("size");
+            bool valid=size.length()>0 && size.length()<=7;
+            for(size_t i=0;i<size.length();++i) valid=valid && size[i]>='0' && size[i]<='9';
+            if(!valid || size.toInt()<=0) { failEspUpdate("invalid_size"); return; }
+            espUploadExpected=size.toInt();
+        }
+        espUploadHeld=backhaulMaintenanceBegin();
+        if(!espUploadHeld) { failEspUpdate("radio_busy"); return; }
         Update.onProgress(progressFunc);
+        espUploadStarted=Update.begin(espUploadExpected ? espUploadExpected : UPDATE_SIZE_UNKNOWN);
+        if(!espUploadStarted) failEspUpdate("ota_begin_failed");
     }
-    else if (upload.status == UPLOAD_FILE_WRITE)
+    else if(upload.status==UPLOAD_FILE_WRITE && espUploadStarted)
     {
-        if (Update.write(upload.buf, upload.currentSize) != upload.currentSize)
-        {
-            Update.printError(Serial);
+        if(Update.write(upload.buf,upload.currentSize)!=upload.currentSize) {
+            failEspUpdate("ota_write_failed"); espUploadStarted=false;
         }
+        espUploadReceived+=upload.currentSize;
     }
-    else if (upload.status == UPLOAD_FILE_END)
-    {
-        if (Update.end(true))
-        {
-            LOGD("Update success. Rebooting...");
-            ESP.restart();
-        }
-        else
-        {
-            LOGD("Update error: ");
-            Update.printError(Serial);
-        }
+    else if(upload.status==UPLOAD_FILE_END) espUploadReady=espUploadStarted;
+    else if(upload.status==UPLOAD_FILE_ABORTED) {
+        failEspUpdate("upload_aborted");
+        if(espUploadHeld) backhaulMaintenanceEnd();
+        espUploadHeld=espUploadSeen=espUploadReady=espUploadStarted=false;
     }
 }
 
-void handleEvents()
-{
-    if (is_authenticated())
-    {
-        if (eventsClient)
-        {
-            eventsClient.stop();
-        }
-        eventsClient = serverWeb.client();
-        if (eventsClient)
-        {
-            eventsClient.println ("HTTP/1.1 200 OK");
-            eventsClient.println ("Content-Type: text/event-stream;");
-            eventsClient.println ("Connection: close");
-            eventsClient.println ("Access-Control-Allow-Origin: *");
-            eventsClient.println ("Cache-Control: no-cache");
-            eventsClient.println ();
-            eventsClient.flush   ();
+// SSE transport: this also runs with backhaul Off. Arduino WiFiClient::write
+// retries select() for seconds; it must never run in an OTA callback or while
+// holding the lock shared with the HTTP task. SSE is recoverable telemetry:
+// close a congested/partial stream and let EventSource reconnect for a snapshot.
+static void dropEvents() {
+    ++eventDrops;
+    eventsClient.stop();
+}
+
+static void writeEvents(const char *data, size_t length) {
+    if(eventsClient.fd()<0) return;
+    if(::send(eventsClient.fd(),data,length,MSG_DONTWAIT)!=static_cast<ssize_t>(length))
+        dropEvents();
+}
+
+static bool eventsConnected() {
+    if(!sendEventMutex || xSemaphoreTake(sendEventMutex,0)!=pdTRUE) return false;
+    bool connected=eventsClient.connected();
+    xSemaphoreGive(sendEventMutex);
+    return connected;
+}
+
+void handleEvents() {
+    if(!is_authenticated()) { serverWeb.send(401); return; }
+    // No wait on a worker and no unsynchronised reassignment of its WiFiClient.
+    if(!sendEventMutex || xSemaphoreTake(sendEventMutex,0)!=pdTRUE) {
+        serverWeb.client().stop();
+        return;
+    }
+    eventsClient.stop();
+    eventsClient=serverWeb.client();
+    eventsClient.setNoDelay(true);
+    static const char headers[]="HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n"
+        "Connection: close\r\nCache-Control: no-cache\r\n\r\nretry: 1500\n\n";
+    writeEvents(headers,sizeof(headers)-1);
+    xSemaphoreGive(sendEventMutex);
+}
+
+static void sendEventRecord(const char *event, const String &data, bool rootFinish) {
+    if(!sendEventMutex || xSemaphoreTake(sendEventMutex,0)!=pdTRUE) return;
+    if(eventsClient.fd()>=0) {
+        String record;
+        size_t expected=strlen(event)+data.length()+16;
+        static const char finish[]="event: root_update\ndata: finish\n\n";
+        if(rootFinish) expected+=sizeof(finish)-1;
+        if(!record.reserve(expected)) dropEvents();
+        else {
+            record+="event: "; record+=event; record+="\ndata: "; record+=data; record+="\n\n";
+            if(rootFinish) record+=finish;
+            if(record.length()!=expected) dropEvents();
+            else writeEvents(record.c_str(),record.length());
         }
     }
+    xSemaphoreGive(sendEventMutex);
 }
 
 void sendEventSafe(const char *event, const String data) {
-    if(xSemaphoreTake(sendEventMutex, pdMS_TO_TICKS(250))) {
-        sendEvent(event, data);
-        xSemaphoreGive(sendEventMutex);
-    }
-    else {
-        DEBUG_PRINTLN("Could not send event because method was locked!");
-    }
-}
-
-void sendEvent(const char *event, const String data)
-{
-    if (eventsClient)
-    {
-        eventsClient.print(String("event: ") + event + "\n");
-        eventsClient.print(String("data: ") + data + "\n\n");
-        eventsClient.flush();
-    }
+    sendEventRecord(event,data,false);
 }
 
 void sendGzip(const char *contentType,
@@ -520,18 +594,19 @@ static void apiCmdUpdateUrl(String &result)
 {
     if (serverWeb.hasArg(argUrl))
     {
-        getEspUpdate(serverWeb.arg(argUrl));
+        result=getEspUpdate(serverWeb.arg(argUrl)) ? "esp_updated" : espUpdateError;
     }
     else
     {
         String link = fetchLatestEspFw();
         if (link)
         {
-            getEspUpdate(link);
+            result=getEspUpdate(link) ? "esp_updated" : espUpdateError;
         }
         else
         {
             LOGW("%s", String(errLink));
+            failEspUpdate("download_failed"); result=espUpdateError;
         }
     }
 }
@@ -614,6 +689,9 @@ static void apiCmdLedAct(String &result)
 
 static void apiCmdZbFlash(String &result)
 {
+    BackhaulMaintenance maintenance;
+    if(!maintenance) { serverWeb.send(409,contTypeText,"radio_busy"); return; }
+    bool updated=false;
     const char* zigbee_firmware_path = "/zigbee/firmware.bin";
 
     DEBUG_PRINT("[WEB] There are currently ");
@@ -625,7 +703,8 @@ static void apiCmdZbFlash(String &result)
 
     if (serverWeb.hasArg(argUrl))
     {
-        if(!flashZigbeefromURL(serverWeb.arg(argUrl).c_str(), zigbee_firmware_path, CCTool)) {
+        updated=flashZigbeefromURL(serverWeb.arg(argUrl).c_str(), zigbee_firmware_path, CCTool);
+        if(!updated) {
             DEBUG_PRINTLN("[WEB] Error while downloading and flashing Zigbee firmware");
         }
     }
@@ -633,7 +712,8 @@ static void apiCmdZbFlash(String &result)
         String link = fetchLatestZbFw();
         if (link)
         {
-            if(!flashZigbeefromURL(link.c_str(), zigbee_firmware_path, CCTool)) {
+            updated=flashZigbeefromURL(link.c_str(), zigbee_firmware_path, CCTool);
+            if(!updated) {
                 DEBUG_PRINTLN("[WEB] Error while downloading and flashing ZigBee firmware from link");
             }
         }
@@ -642,7 +722,7 @@ static void apiCmdZbFlash(String &result)
             LOGW("%s", String(errLink));
         }
     }
-    changeZbMode(serverWeb.arg(argFwMode));
+    if(updated) changeZbMode(serverWeb.arg(argFwMode));
     
 }
 
@@ -654,8 +734,8 @@ void changeZbMode(String fwMode) {
 
         // Only here because the other FWs dont respond to FW checks
         DEBUG_PRINTLN("[WEB] Checking ZigBee firmware on the CC");
-        String result = "";
-        apiCmdZbCheckFirmware(result);
+        // The upload handler sends the final response after role persistence and cleanup.
+        zbFwCheck();
     }
     else if (fwMode == "router")
     {
@@ -669,6 +749,7 @@ void changeZbMode(String fwMode) {
         DEBUG_PRINTLN("[WEB] Changed ZbRole to OPENTHREAD");
     }
     saveSystemConfig(systemCfg);
+    backhaulRoleChanged();
 }
 
 static void apiCmdDefault(String &result)
@@ -1054,39 +1135,18 @@ void handleSaveParams()
     updateConfiguration(serverWeb, systemCfg, networkCfg, vpnCfg, mqttCfg);
 }
 
-void printEachKeyValuePair(const String &jsonString)
-{
-    DynamicJsonDocument doc(1024);
-    DeserializationError error = deserializeJson(doc, jsonString);
-
-    if (error)
-    {
-
-        return;
-    }
-
-    for (JsonPair kv : doc.as<JsonObject>())
-    {
-        DynamicJsonDocument pairDoc(256);
-        pairDoc[kv.key().c_str()] = kv.value();
-
-        String output;
-        serializeJson(pairDoc, output);
-
-        sendEventSafe("root_update", String(output));
-    }
-    sendEventSafe("root_update", String("finish"));
-}
-
 void updateWebTask(void *parameter)
 {
-    TickType_t lastWakeTime = xTaskGetTickCount();
     while (1)
     {
-        String root_data = getRootData(true);
-        printEachKeyValuePair(root_data);
-        root_data = String(); // free memory
-        vTaskDelayUntil(&lastWakeTime, pdMS_TO_TICKS(systemCfg.refreshLogs * 1000));
+        if(eventsConnected()) {
+            // The browser already merges a JSON object. Send the whole snapshot
+            // and finish in one write, not two writes for every individual key.
+            String root_data=getRootData(true);
+            sendEventRecord("root_update",root_data,true);
+        }
+        // Always yield after work; no catch-up bursts after a slow sensor/read.
+        vTaskDelay(pdMS_TO_TICKS(webRefreshSeconds(systemCfg.refreshLogs)*1000));
     }
 }
 
@@ -1873,12 +1933,14 @@ void handleSavefile()
 /* ----- Multi-tool support | START -----*/
 void handleZigbeeBSL()
 {
+    if (!is_authenticated()) { serverWeb.send(401); return; }
     zigbeeEnableBSL();
     serverWeb.send(HTTP_CODE_OK, contTypeText, "Zigbee BSL");
 }
 
 void handleZigbeeRestart()
 {
+    if (!is_authenticated()) { serverWeb.send(401); return; }
     zigbeeRestart();
     serverWeb.send(HTTP_CODE_OK, contTypeText, "Zigbee Restart");
 }
@@ -1913,7 +1975,7 @@ void printLogMsg(String msg)
 
 void progressFunc(unsigned int progress, unsigned int total)
 {
-    float percent = ((float)progress / total) * 100.0;
+    float percent = total ? std::min(99.0f, ((float)progress / total) * 100.0f) : 0;
 
     sendEventSafe(tagESP_FW_prgs, String(percent));
     // printLogMsg(String(percent));
@@ -1926,84 +1988,53 @@ void progressFunc(unsigned int progress, unsigned int total)
 #endif
 };
 
-int totalLength;       // total size of firmware
-int currentLength = 0; // current size of written firmware
-
-void getEspUpdate(String esp_fw_url)
+bool getEspUpdate(String esp_fw_url)
 {
-    LOGI("getEspUpdate: %s", esp_fw_url.c_str());
-
+    if(espUpdateRestartAt) return false;
+    espUpdateState="uploading"; espUpdateError="";
+    BackhaulMaintenance maintenance;
+    if(!maintenance) { failEspUpdate("radio_busy"); return false; }
     checkDNS();
     HTTPClient http;
     WiFiClientSecure client;
-    client.setInsecure(); // the magic line, use with caution
+    client.setInsecure(); // Preserve the stock URL updater's HTTPS policy.
     http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
-    http.begin(client, esp_fw_url);
-    http.addHeader("Content-Type", "application/octet-stream");
-
-    // Get file, just to check if each reachable
-    int resp = http.GET();
-    LOGD("Response: %s", String(resp));
-    // If file is reachable, start downloading
-    if (resp == HTTP_CODE_OK)
-    {
-        // get length of document (is -1 when Server sends no Content-Length header)
-        totalLength = http.getSize();
-        // transfer to local variable
-        int len = totalLength;
-        // this is required to start firmware update process
-        Update.begin(totalLength);
-        Update.onProgress(progressFunc);
-        LOGI("FW Size: %s", String(totalLength));
-        // create buffer for read
-        uint8_t buff[128] = {0};
-        // get tcp stream
-        WiFiClient *stream = http.getStreamPtr();
-        // read all data from server
-        LOGI("Updating firmware...");
-        while (http.connected() && (len > 0 || len == -1))
-        {
-            // get available data size
-            size_t size = stream->available();
-            if (size)
-            {
-                // read up to 128 byte
-                int c = stream->readBytes(buff, ((size > sizeof(buff)) ? sizeof(buff) : size));
-                // pass to function
-                runEspUpdateFirmware(buff, c);
-                if (len > 0)
-                {
-                    len -= c;
-                }
-            }
-        }
+    http.begin(client,esp_fw_url);
+    http.addHeader("Content-Type","application/octet-stream");
+    if(http.GET()!=HTTP_CODE_OK) { http.end(); failEspUpdate("download_failed"); return false; }
+    int remaining=http.getSize();
+    if(remaining<=0 || !Update.begin(remaining)) {
+        http.end(); failEspUpdate("ota_begin_failed"); return false;
     }
-    else
-    {
-        LOGI("Cannot download firmware file.");
+    Update.onProgress(progressFunc);
+    WiFiClient *stream=http.getStreamPtr();
+    uint8_t buffer[512];
+    uint32_t lastProgress=millis();
+    bool ok=true;
+    while(remaining>0) {
+        size_t available=stream->available();
+        if(available) {
+            size_t count=std::min(available,std::min(sizeof(buffer),static_cast<size_t>(remaining)));
+            int received=stream->readBytes(buffer,count);
+            if(received<=0 || Update.write(buffer,received)!=static_cast<size_t>(received)) { ok=false; break; }
+            remaining-=received; lastProgress=millis();
+        } else if(!http.connected() || millis()-lastProgress>10000) { ok=false; break; }
+        delay(1);
     }
     http.end();
+    if(ok && remaining==0 && Update.end()) {
+        printLogMsg("[ESP] Update complete; restarting"); completeEspUpdate(); return true;
+    } else {
+        failEspUpdate("ota_incomplete_or_invalid"); return false;
+    }
 }
 
-void runEspUpdateFirmware(uint8_t *data, size_t len)
+String fetchLatestEspFw(bool refreshDns)
 {
-    Update.write(data, len);
-    currentLength += len;
-
-    // if current length of written firmware is not equal to total firmware size, repeat
-    if (currentLength != totalLength)
-        return;
-    // only if currentLength == totalLength
-    Update.end(true);
-    LOGD("Update success. Rebooting...");
-    // Restart ESP32 to see changes
-    ESP.restart();
-}
-
-String fetchLatestEspFw()
-{
-    checkDNS();
+    if(refreshDns) checkDNS();
     HTTPClient http;
+    http.setConnectTimeout(2500);
+    http.setTimeout(3000);
     http.begin("https://docs.codm.de/tools/releases.php");
     int httpCode = http.GET();
 
@@ -2032,10 +2063,12 @@ String fetchLatestEspFw()
     return browser_download_url;
 }
 
-String fetchLatestZbFw()
+String fetchLatestZbFw(bool refreshDns)
 {
-    checkDNS();
+    if(refreshDns) checkDNS();
     HTTPClient http;
+    http.setConnectTimeout(2500);
+    http.setTimeout(3000);
 
     http.begin("https://raw.githubusercontent.com/codm/CZC/refs/heads/zb_fws/ti/manifest.json");
     int httpCode = http.GET();

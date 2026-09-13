@@ -49,5 +49,6 @@ void ledTask(void *parameter);
 String getTime();
 
 void checkUpdateAvail();
+void updateCheckLoop();
 
 int numOfConnectedClients();

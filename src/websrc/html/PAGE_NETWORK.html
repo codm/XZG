@@ -31,6 +31,22 @@
 
     <div class="tab-content">
         <div class="tab-pane fade active show" id="network" role="tabpanel" aria-labelledby="fw-tab">
+            <div class="col-12 cardPadding" id="networkStatusCard">
+                <div class="card">
+                    <div class="card-header fw-bold" data-i18n="p.ne.live.title">Current addresses</div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table mb-2">
+                                <thead><tr><th data-i18n="p.ne.live.interface">Interface</th><th data-i18n="p.ne.live.state">Connection</th><th>IPv4</th><th>IPv6</th></tr></thead>
+                                <tbody id="networkAddresses"></tbody>
+                            </table>
+                        </div>
+                        <p class="small text-muted mb-2" data-i18n="p.ne.live.help">IPv6 addresses appear automatically. A link-local address works only within the local network.</p>
+                        <p id="networkStatusError" class="text-danger d-none" role="status"></p>
+                        <button id="networkStatusRefresh" type="button" class="btn btn-outline-secondary" data-i18n="p.ne.live.refresh">Refresh</button>
+                    </div>
+                </div>
+            </div>
             <form class="saveParams" method='POST' action="saveParams" id="netCfg" data-target="network">
                 <div class="col-12 cardPadding" id="ethCfg">
                     <div class='card'>

@@ -9,6 +9,8 @@
 #include <CCTools.h>
 
 #include "config.h"
+#include "czc_backhaul.h"
+#include <RadioImage.h>
 #include "web.h"
 #include "log.h"
 #include "etc.h"
@@ -35,9 +37,13 @@ size_t lastSize = 0;
 String tag_ZB = "[ZB]";
 
 extern CCTools CCTool;
+extern void socketClientsDisconnect();
 
 bool zbFwCheck()
 {
+    BackhaulMaintenance maintenance;
+    if (!maintenance) { printLogMsg("[ZB] UART busy; operation cancelled"); return false; }
+
     // As long as the ROUTER Version doesn't work with this check this manual override will guarantee a return true in non COORDINATOR mode
     if(systemCfg.zbRole != COORDINATOR) return true;
 
@@ -63,6 +69,9 @@ bool zbFwCheck()
 
 void zbHwCheck()
 {
+    BackhaulMaintenance maintenance;
+    if (!maintenance) { printLogMsg("[ZB] UART busy; operation cancelled"); return; }
+
     ledControl.modeLED.mode = LED_BLINK_1Hz;
 
     if (CCTool.detectChipInfo())
@@ -87,6 +96,9 @@ void zbHwCheck()
 
 bool zbLedToggle()
 {
+    BackhaulMaintenance maintenance;
+    if (!maintenance) { printLogMsg("[ZB] UART busy; operation cancelled"); return false; }
+
     if (CCTool.ledToggle())
     {
         if (CCTool.ledState == 1)
@@ -110,6 +122,9 @@ bool zbLedToggle()
 
 bool zigbeeErase()
 {
+    BackhaulMaintenance maintenance;
+    if (!maintenance) { printLogMsg("[ZB] UART busy; operation cancelled"); return false; }
+
     if (CCTool.eraseFlash())
     {
         LOGD("magic");
@@ -130,15 +145,24 @@ void nvPrgs(const String &inputMsg)
 
 void zbEraseNV(void *pvParameters)
 {
-    vars.zbFlashing = true;
-    CCTool.nvram_reset(nvPrgs);
-    logClear();
-    printLogMsg("NVRAM erase finish! Restart CC2652!");
-    vars.zbFlashing = false;
+    {
+        // FreeRTOS task deletion does not unwind C++ automatic objects.
+        BackhaulMaintenance maintenance;
+        if (!maintenance) printLogMsg("[ZB] UART busy; operation cancelled");
+        else {
+            vars.zbFlashing = true;
+            CCTool.nvram_reset(nvPrgs);
+            logClear();
+            printLogMsg("NVRAM erase finish! Restart CC2652!");
+            vars.zbFlashing = false;
+        }
+    }
     vTaskDelete(NULL);
 }
 
 bool flashZigbeefromURL(const char *url, const char *zigbee_firmware_path, CCTools &CCTool) {
+    BackhaulMaintenance maintenance;
+    if (!maintenance) return false;
     bool update_successful = false;
 
     ledControl.modeLED.mode = LED_BLINK_3Hz;
@@ -148,9 +172,12 @@ bool flashZigbeefromURL(const char *url, const char *zigbee_firmware_path, CCToo
     removeFileFromFS(zigbee_firmware_path);
     zigbee_firmware_path = downloadFirmwareFromGithub(url);
     if(zigbee_firmware_path != nullptr) {
-        update_successful = eraseWriteZbFile(zigbee_firmware_path,CCTool) && removeFileFromFS(zigbee_firmware_path);  
+        update_successful = eraseWriteZbFile(zigbee_firmware_path,CCTool);
+        if (!removeFileFromFS(zigbee_firmware_path)) {
+            printLogMsg("[ZB] Cannot remove downloaded firmware file");
+        }
         if(!update_successful) {
-            DEBUG_PRINTLN("[FLASH] Error while flashing or erasing file -> function returned false");
+            DEBUG_PRINTLN("[FLASH] Error while flashing -> function returned false");
         }
     }
     else {
@@ -165,12 +192,11 @@ bool flashZigbeefromURL(const char *url, const char *zigbee_firmware_path, CCToo
 
     // Example URL:
     // https://raw.githubusercontent.com/xyzroe/XZG/zb_fws/ti/router/zr_genericapp_LP_CC1352P7_4_tirtos7_ticlang_20231201.bin?b=115200
-    char* binIndex = strstr(url, "bin");
-    int versionNumber = (int)strtol((binIndex - 9), NULL, 10);
-    systemCfg.zigBeeFwVersion = versionNumber;
-    saveSystemConfig(systemCfg);
-    DEBUG_PRINT("Saving Version number to systemconfig: ");
-    DEBUG_PRINTLN(versionNumber);
+    if (update_successful) {
+        String version=extractVersionFromURL(String(url));
+        if (version.length()) systemCfg.zigBeeFwVersion=version.toInt();
+        saveSystemConfig(systemCfg);
+    }
 
     return update_successful;
 }
@@ -179,13 +205,15 @@ const char* downloadFirmwareFromGithub(const char *url) {
     sendEventSafe(tagZB_FW_info, String("startDownload"));
 
     HTTPClient http;
+    WiFiClient plain_client;
     WiFiClientSecure secure_client;
     secure_client.setInsecure();
     http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
     
     const char* zigbee_firmware_path = "/zigbee/firmware.bin";
     DEBUG_PRINTLN("[HTTP] begin...");
-    http.begin(secure_client, url);
+    if(String(url).startsWith("http://")) http.begin(plain_client,url);
+    else http.begin(secure_client, url);
 
     http.addHeader("Content-Type", "application/octet-stream");
     http.addHeader("Connection", "close");    
@@ -204,7 +232,7 @@ const char* downloadFirmwareFromGithub(const char *url) {
         WiFiClient* http_read_stream = http.getStreamPtr();
 
         DEBUG_PRINTLN("[LITTLEFS] check filesystem, create and open Firmware file");
-        if(!hasEnoughLittleFsSpaceLeft(http_total_file_length)) {
+        if(http_total_file_length<=0 || http_total_file_length>static_cast<int>(CCTool.chip.flashSize) || !hasEnoughLittleFsSpaceLeft(http_total_file_length)) {
             DEBUG_PRINTLN("[LITTLEFS] ERROR: not enough space in FS, returning nullptr");
             return nullptr;
         }
@@ -221,6 +249,7 @@ const char* downloadFirmwareFromGithub(const char *url) {
 
         DEBUG_PRINTLN("[HTTP] Start download...");
         float previousPercent = 0;
+        uint32_t lastRead=millis();
         // download remaining file length OR continue chunked download (len = -1)
         while(http.connected() && (http_remaining_file_length > 0 || http_remaining_file_length == -1)) {
             size_t download_available_size = http_read_stream->available();
@@ -231,8 +260,10 @@ const char* downloadFirmwareFromGithub(const char *url) {
                     ((download_available_size > sizeof(http_read_buffer)) ? sizeof(http_read_buffer) : download_available_size)
                 );
 
+                if(http_payload_size<=0) { zigbee_firmware_file.close(); http.end(); return nullptr; }
+                lastRead=millis();
                 //write payload to littleFS
-                if(!zigbee_firmware_file.write(http_read_buffer, http_payload_size)){
+                if(zigbee_firmware_file.write(http_read_buffer, http_payload_size)!=static_cast<size_t>(http_payload_size)){
                     DEBUG_PRINTLN("[LITTLEFS] ERROR appending data to firmware file");
                     return nullptr;
                 }
@@ -244,55 +275,86 @@ const char* downloadFirmwareFromGithub(const char *url) {
             float percent = ((float)http_total_file_length - http_remaining_file_length) / http_total_file_length * 100.0f;  
             previousPercent = sendPercentageToFrontend(percent, previousPercent, tagZB_FW_DW_prgs);
 
+            if(millis()-lastRead>10000) { zigbee_firmware_file.close(); http.end(); return nullptr; }
             delay(1); // yield to other applications
         }
         zigbee_firmware_file.close();
+        File stored=LittleFS.open(zigbee_firmware_path,"r");
+        bool complete=http_remaining_file_length==0 && stored && stored.size()==static_cast<size_t>(http_total_file_length);
+        stored.close();
+        if(!complete) { http.end(); return nullptr; }
         DEBUG_PRINTLN("[HTTP] Finished download");
     }
     else {
         DEBUG_PRINT("[HTTP] GET failed, error: ");
         DEBUG_PRINTLN(http.errorToString(http_response_code).c_str());
+        http.end(); return nullptr;
     }
     http.end();
     return zigbee_firmware_path;
 }
 
-bool eraseWriteZbFile(const char *filePath, CCTools &CCTool)
+bool eraseWriteZbFile(const char *filePath, CCTools &CCTool, ZbFlashReport *report)
 {
+    ZbFlashReport local;
+    ZbFlashReport &state=report ? *report : local;
+    state=ZbFlashReport();
+    auto fail=[&](const char *code) {
+        state.error=code; state.bslError=CCTool.lastBslError(); state.bslStatus=CCTool.lastBslStatus();
+        String message=String("[ZB] ")+code+" stage="+state.stage+" written="+String(state.writtenBytes)+"/"+String(state.imageBytes)+" bsl="+state.bslError+" status="+String(state.bslStatus);
+        printLogMsg(message);
+        sendEventSafe(tagZB_FW_err,message);
+        return false;
+    };
+    BackhaulMaintenance maintenance;
+    if (!maintenance) return fail("radio_busy");
+
     sendEventSafe(tagZB_FW_info, String("startFlash"));
     
     File file = LittleFS.open(filePath, "r");
     if (!file)
     {
-        char buffer[100];
-        snprintf(buffer, sizeof(buffer), "Failed to open file: %s\n", filePath);
-        printLogMsg(buffer);
-        return false;
+        return fail("image_open_failed");
     }
 
-    CCTool.eraseFlash();
+    uint8_t header[8];
+    state.imageBytes=file.size();
+    size_t headerBytes=file.read(header,sizeof(header));
+    if(!CCTool.chip.flashSize) { file.close(); return fail("radio_flash_unknown"); }
+    if(!czc::radioImageHeader(header,headerBytes,file.size(),CCTool.chip.flashSize) || !file.seek(0)) {
+        file.close(); return fail("radio_image_invalid");
+    }
+    // Pair sessions were closed by maintenance; also close ordinary TCP clients.
+    socketClientsDisconnect();
+    state.stage="erase"; state.eraseStarted=true;
+    if (!CCTool.eraseFlash()) { file.close(); return fail("radio_erase_failed"); }
     printLogMsg("Erase completed!");
     DEBUG_PRINTLN("[FLASH] Erase completed!");
 
     int totalSize = file.size();
-
+    state.stage="begin_write";
     if (!CCTool.beginFlash(BEGIN_ZB_ADDR, totalSize))
     {
         file.close();
-        return false;
+        return fail("radio_begin_failed");
     }
 
     byte buffer[CCTool.TRANSFER_SIZE];
     int loadedSize = 0;
+    uint32_t crc=0xffffffffu;
 
     DEBUG_PRINTLN("[FLASH] Begin flash process...");
+    state.stage="write";
     float previousPercent = 0;
     while (file.available() && loadedSize < totalSize)
     {
         size_t size = file.available();
         int c = file.readBytes(reinterpret_cast<char *>(buffer), std::min(size, sizeof(buffer)));
-        CCTool.processFlash(buffer, c);
+        if (c <= 0) { file.close(); return fail("image_read_failed"); }
+        if (!CCTool.processFlash(buffer, c)) { file.close(); return fail("radio_write_failed"); }
+        crc=czc::radioCrcUpdate(crc,buffer,c);
         loadedSize += c;
+        state.writtenBytes=loadedSize;
         float percent = static_cast<float>(loadedSize) / totalSize * 100.0f;
         previousPercent = sendPercentageToFrontend(percent, previousPercent, tagZB_FW_prgs);
         delay(1); // Yield to allow other processes
@@ -300,10 +362,16 @@ bool eraseWriteZbFile(const char *filePath, CCTools &CCTool)
     
     DEBUG_PRINTLN("[FLASH] Completed!");
     file.close();
+    if(loadedSize!=totalSize) return fail("image_truncated");
 
+    state.stage="verify";
+    sendEventSafe(tagZB_FW_info, String("verifyFlash"));
+    if(!CCTool.verifyFlash(BEGIN_ZB_ADDR,totalSize,crc^0xffffffffu)) return fail("radio_verify_failed");
     sendEventSafe(tagZB_FW_info, String("finishFlash"));
 
     CCTool.restart();
+    backhaulBslHold(false);
+    state.stage="complete";
     return true;
 }
 

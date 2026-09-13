@@ -1,0 +1,7 @@
+{
+  "name": "CzcPeerTls",
+  "version": "3.6.7",
+  "build": {
+    "extraScript": "build.py"
+  }
+}

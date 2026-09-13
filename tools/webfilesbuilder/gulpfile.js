@@ -20,7 +20,7 @@ function stylesConcat() {
         .pipe(cleanCSS({compatibility: 'ie8'}))
         .pipe(gulp.dest('../../src/websrc/min/css/'))
         .pipe(gzip({
-            append: true
+            append: true, gzipOptions: { level: 9 }
         }))
         .pipe(gulp.dest('../../src/websrc/gzipped/css/'));
 }
@@ -55,7 +55,7 @@ function scriptsgz() {
     return gulp.src("../../src/websrc/js/*.js")
         .pipe(uglify())
         .pipe(gulp.dest("../../src/websrc/min/js/"))
-        .pipe(gzip({ append: true }))
+        .pipe(gzip({ append: true, gzipOptions: { level: 9 } }))
         .pipe(gulp.dest('../../src/websrc/gzipped/js/'));
 }
 
@@ -88,7 +88,7 @@ function fontgz() {
     return gulp.src("../../src/websrc/fonts/*.*")
         .pipe(gulp.dest("../../src/websrc/fonts/"))
         .pipe(gzip({
-            append: true
+            append: true, gzipOptions: { level: 9 }
         }))
         .pipe(gulp.dest('../../src/websrc/gzipped/fonts/'));
 }
@@ -122,7 +122,7 @@ function imggz() {
     return gulp.src("../../src/websrc/img/*.*")
         .pipe(gulp.dest("../../src/websrc/img/"))
         .pipe(gzip({
-            append: true
+            append: true, gzipOptions: { level: 9 }
         }))
         .pipe(gulp.dest('../../src/websrc/gzipped/img/'));
 }
@@ -156,7 +156,7 @@ function htmlgz() {
     return gulp.src("../../src/websrc/html/*.html")
         .pipe(htmlmin({ collapseWhitespace: true, removeComments: true, removeRedundantAttributes: true }))
         .pipe(gulp.dest("../../src/websrc/min/html/"))
-        .pipe(gzip({ append: true }))
+        .pipe(gzip({ append: true, gzipOptions: { level: 9 } }))
         .pipe(gulp.dest('../../src/websrc/gzipped/html/'));
 }
 
@@ -189,7 +189,7 @@ function jsongz() {
     return gulp.src("../../src/websrc/json/*.json")
         .pipe(jsonminify())
         .pipe(gulp.dest("../../src/websrc/min/json/"))
-        .pipe(gzip({ append: true }))
+        .pipe(gzip({ append: true, gzipOptions: { level: 9 } }))
         .pipe(gulp.dest('../../src/websrc/gzipped/json/'));
 }
 
